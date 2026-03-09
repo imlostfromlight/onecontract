@@ -12,6 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from users.models import User
+from users.egov_mobile import EGovMobileAuth
 from users.permissions import IsSuperAdmin, IsAdminUser, IsOrganization, IsClient, IsOrganizationOrClient
 
 class DocumentViewSet(viewsets.ModelViewSet):
@@ -281,3 +282,66 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Response({
                 "detail": str(e)
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    @action(detail=True, methods=['post'])
+    def sign_egov_init(self, request, pk=None):
+        """
+        Initialize eGov Mobile QR signing session for a document.
+        """
+        document = self.get_object()
+        if document.status == 'SIGNED':
+             return Response({'detail': 'Document already signed'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            data = EGovMobileAuth.generate_qr_request()
+            return Response(data, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"eGov QR init failed: {e}")
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['get'])
+    def sign_egov_status(self, request, pk=None):
+        """
+        Check status of eGov Mobile QR session for document signing.
+        Query Param: session_id
+        """
+        document = self.get_object()
+        session_id = request.query_params.get('session_id')
+        if not session_id:
+            return Response({'detail': 'session_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            status_data = EGovMobileAuth.check_status(session_id)
+            
+            if status_data['status'] == 'SIGNED':
+                user_data = status_data['user_data']
+                
+                # Check if document is already signed (race condition check)
+                if document.status == 'SIGNED':
+                    return Response({
+                        'status': 'SIGNED',
+                        'document': DocumentSerializer(document).data
+                    })
+
+                # Verify the signer matches the current user
+                if user_data['iin'] != request.user.username:
+                     return Response({
+                         'status': 'ERROR', 
+                         'detail': f'ИИН подписанта ({user_data["iin"]}) не совпадает с текущим пользователем'
+                     }, status=status.HTTP_200_OK) # Return 200 to handle error gracefully in polling
+
+                # Sign the document
+                document.status = 'SIGNED'
+                document.signature = f"MOCK_EGOV_SIGNATURE_SESSION_{session_id}"
+                document.signed_at = timezone.now()
+                document.save()
+                
+                return Response({
+                    'status': 'SIGNED',
+                    'document': DocumentSerializer(document).data
+                })
+                
+            return Response({'status': status_data['status']}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"eGov status check failed: {e}")
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

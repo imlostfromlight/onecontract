@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { QRCodeSVG } from 'qrcode.react'; // Add QRCodeSVG import
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import NCALayerService from '../lib/ncalayer';
@@ -34,6 +35,49 @@ export function DocumentSign() {
         suspicious_clauses: string[];
     } | null>(null);
     const [summaryDocTitle, setSummaryDocTitle] = useState<string>('');
+
+    // --- eGov Mobile QR State ---
+    const [egovModalOpen, setEgovModalOpen] = useState(false);
+    const [egovSessionId, setEgovSessionId] = useState<string | null>(null);
+    const [egovSignUrl, setEgovSignUrl] = useState<string | null>(null);
+    const [egovStatus, setEgovStatus] = useState<'LOADING' | 'WAITING' | 'SIGNED' | 'EXPIRED' | 'ERROR'>('LOADING');
+    const [currentDocId, setCurrentDocId] = useState<number | null>(null);
+
+    // eGov Polling
+    useEffect(() => {
+        if (!egovSessionId || egovStatus !== 'WAITING' || !currentDocId) return;
+
+        const intervalId = setInterval(async () => {
+            try {
+                const res = await fetch(`${API_BASE}/api/documents/${currentDocId}/sign_egov_status/?session_id=${egovSessionId}`, {
+                    headers: { Authorization: `Token ${token}` }
+                });
+                const data = await res.json();
+
+                if (data.status === 'SIGNED') {
+                    setEgovStatus('SIGNED');
+                    // Update document in list
+                    setDocuments(docs => docs.map(d => d.id === data.document.id ? data.document : d));
+                    // Close modal after delay
+                    setTimeout(() => {
+                        setEgovModalOpen(false);
+                        setEgovSessionId(null);
+                        setCurrentDocId(null);
+                        // alert("Документ успешно подписан через eGov Mobile!");
+                    }, 2000);
+                } else if (data.status === 'EXPIRED') {
+                    setEgovStatus('EXPIRED');
+                } else if (data.status === 'ERROR') {
+                    setEgovStatus('ERROR');
+                    // Don't close immediately, let user see error
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }, 2000);
+        return () => clearInterval(intervalId);
+    }, [egovSessionId, egovStatus, currentDocId, token]);
+
 
     useEffect(() => {
         fetchDocuments();
@@ -87,6 +131,50 @@ export function DocumentSign() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleEGovSign = async (doc: Document) => {
+        setEgovModalOpen(true);
+        setEgovStatus('LOADING');
+        setCurrentDocId(doc.id);
+
+        try {
+            // Use 0 as offset for doc.id if needed, but it should be doc.id
+            const res = await fetch(`${API_BASE}/api/documents/${doc.id}/sign_egov_init/`, {
+                method: 'POST',
+                headers: { Authorization: `Token ${token}` },
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setEgovSessionId(data.session_id);
+                setEgovSignUrl(data.sign_url);
+                setEgovStatus('WAITING');
+            } else {
+                setEgovStatus('ERROR');
+                console.error(data);
+            }
+        } catch (e) {
+            console.error(e);
+            setEgovStatus('ERROR');
+        }
+    };
+
+    // Dev Helper
+    const handleMockConfirm = async () => {
+        if (!egovSessionId) return;
+        try {
+            await fetch(`${API_BASE}/api/auth/egov/qr/confirm/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    session_id: egovSessionId,
+                    iin: user?.username || "111111111111",
+                    email: user?.email || "mock@test.com",
+                    first_name: user?.first_name || "Mock",
+                    last_name: user?.last_name || "User"
+                })
+            });
+        } catch (e) { console.error(e); }
     };
 
     const handleSign = async (doc: Document) => {
@@ -278,15 +366,27 @@ export function DocumentSign() {
                                                     🤖 AI Анализ
                                                 </Button>
                                                 {doc.status !== 'SIGNED' && (
-                                                    <Button
-                                                        size="sm"
-                                                        onClick={() => handleSign(doc)}
-                                                        disabled={loading}
-                                                        className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg"
-                                                    >
-                                                        Подписать ЭЦП
-                                                    </Button>
+                                                    <>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => handleSign(doc)}
+                                                            disabled={loading}
+                                                            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg"
+                                                        >
+                                                            Подписать ЭЦП
+                                                        </Button>
+
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            onClick={() => handleEGovSign(doc)}
+                                                            className="border-blue-500 text-blue-600 hover:bg-blue-50 rounded-lg ml-2"
+                                                        >
+                                                            📱 eGov Mobile
+                                                        </Button>
+                                                    </>
                                                 )}
+
                                                 {doc.status === 'SIGNED' && (
                                                     <>
                                                         <span className="text-green-600 bg-green-50 p-1 rounded-full">✓</span>
@@ -329,6 +429,71 @@ export function DocumentSign() {
                 summary={currentSummary}
                 documentTitle={summaryDocTitle}
             />
+
+            {/* eGov QR Modal */}
+            {egovModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative animate-in fade-in zoom-in duration-200">
+                        <button
+                            onClick={() => setEgovModalOpen(false)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+                        >
+                            ✕
+                        </button>
+
+                        <div className="text-center">
+                            <h3 className="text-xl font-bold mb-2 text-gray-900">Подписание через eGov Mobile</h3>
+                            <p className="text-gray-500 text-sm mb-6">
+                                Откройте приложение eGov Mobile, выберите "eGov QR" и отсканируйте код.
+                            </p>
+
+                            <div className="flex justify-center mb-6">
+                                {egovStatus === 'LOADING' && (
+                                    <div className="h-48 w-48 flex items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                    </div>
+                                )}
+
+                                {egovStatus === 'WAITING' && egovSignUrl && (
+                                    <div className="p-4 bg-white rounded-xl border-2 border-gray-100 shadow-sm">
+                                        <QRCodeSVG value={egovSignUrl} size={180} />
+                                    </div>
+                                )}
+
+                                {egovStatus === 'SIGNED' && (
+                                    <div className="h-48 w-48 flex flex-col items-center justify-center bg-green-50 rounded-xl">
+                                        <div className="text-4xl mb-2">✅</div>
+                                        <div className="text-green-700 font-medium">Подписано!</div>
+                                    </div>
+                                )}
+
+                                {egovStatus === 'ERROR' && (
+                                    <div className="h-48 w-48 flex flex-col items-center justify-center bg-red-50 rounded-xl">
+                                        <div className="text-red-500 font-medium">Ошибка</div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Dev Mock Button */}
+                            {import.meta.env.DEV && egovStatus === 'WAITING' && (
+                                <button
+                                    onClick={handleMockConfirm}
+                                    className="mb-4 px-4 py-2 bg-gray-100 text-gray-600 rounded text-xs hover:bg-gray-200"
+                                >
+                                    [DEV] Simulate Mobile Scan
+                                </button>
+                            )}
+
+                            <div className="text-xs text-gray-400">
+                                Используйте ЭЦП, привязанный к вашему аккаунту.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
+
         </div>
     );
 }
