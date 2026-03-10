@@ -1,5 +1,5 @@
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 const API_URL = `${API_BASE}/api`;
 
 export interface User {

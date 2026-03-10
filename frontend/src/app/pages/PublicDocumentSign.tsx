@@ -7,7 +7,7 @@ import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { AISummaryModal } from '../components/AISummaryModal';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 
 interface Document {
     id: number;

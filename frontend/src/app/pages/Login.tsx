@@ -90,27 +90,27 @@ export default function Login() {
 
                   <div className="mt-6 grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => window.location.href = 'http://localhost:8000/api/auth/google/'}
+                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/google/'}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <Mail className="w-5 h-5" />
                       <span className="text-sm font-medium">Google</span>
                     </button>
                     <button
-                      onClick={() => window.location.href = 'http://localhost:8000/api/auth/facebook/'}
+                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/facebook/'}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <span className="text-sm font-medium">Facebook</span>
                     </button>
                     <button
-                      onClick={() => window.location.href = 'http://localhost:8000/api/auth/telegram/'}
+                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/telegram/'}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <MessageCircle className="w-5 h-5" />
                       <span className="text-sm font-medium">Telegram</span>
                     </button>
                     <button
-                      onClick={() => window.location.href = 'http://localhost:8000/api/auth/whatsapp/'}
+                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/whatsapp/'}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <MessageCircle className="w-5 h-5" />

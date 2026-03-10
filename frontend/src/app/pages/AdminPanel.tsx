@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Users, Shield, CheckCircle, XCircle, Search } from 'lucide-react';
 import { User } from '../lib/auth';
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 
 export function AdminPanel() {
     const { token, user: currentUser } = useAuth();

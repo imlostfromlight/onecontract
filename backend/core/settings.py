@@ -27,7 +27,7 @@ SECRET_KEY = 'django-insecure-l4$%xu%))_+u_e$9km8+=b2y)+i6ik_*tjmym^r%fsa8b10+s8
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = ['*', 'onecontract.onrender.com']
 
 
 # Application definition
@@ -155,6 +155,11 @@ CORS_ALLOWED_ORIGINS = [
     "https://localhost:5173",      # ← ADD FOR VITE DEV SERVER
     "https://127.0.0.1:3000",      # ← ADD FOR VITE DEV SERVER
     "https://127.0.0.1:5173",      # ← ADD FOR VITE DEV SERVER
+    "https://onecontract.pages.dev",
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://onecontract.pages.dev",
 ]
 
 CORS_ALLOW_CREDENTIALS = True

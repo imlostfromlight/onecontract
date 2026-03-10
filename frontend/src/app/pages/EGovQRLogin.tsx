@@ -18,7 +18,7 @@ export function EGovQRLogin({ onSuccess, onCancel }: EGovQRLoginProps) {
     useEffect(() => {
         const initSession = async () => {
             try {
-                const res = await fetch('http://localhost:8000/api/auth/egov/qr/init/', {
+                const res = await fetch('https://onecontract.onrender.com/api/auth/egov/qr/init/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                 });
@@ -44,7 +44,7 @@ export function EGovQRLogin({ onSuccess, onCancel }: EGovQRLoginProps) {
 
         const intervalId = setInterval(async () => {
             try {
-                const res = await fetch(`http://localhost:8000/api/auth/egov/qr/status/?session_id=${sessionId}`);
+                const res = await fetch(`https://onecontract.onrender.com/api/auth/egov/qr/status/?session_id=${sessionId}`);
                 const data = await res.json();
 
                 if (data.status === 'SIGNED') {
@@ -65,7 +65,7 @@ export function EGovQRLogin({ onSuccess, onCancel }: EGovQRLoginProps) {
     const handleMockConfirm = async () => {
         if (!sessionId) return;
         try {
-            await fetch('http://localhost:8000/api/auth/egov/qr/confirm/', {
+            await fetch('https://onecontract.onrender.com/api/auth/egov/qr/confirm/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

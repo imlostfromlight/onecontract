@@ -164,7 +164,7 @@ export const testBackendAuthentication = async (
     }
     
     // Send to backend
-    const backendResponse = await fetch('http://localhost:8000/api/users/auth/ecp/', {
+    const backendResponse = await fetch('https://onecontract.onrender.com/api/users/auth/ecp/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -375,7 +375,7 @@ export const testErrorScenarios = async () => {
       name: 'Invalid Email Format',
       test: async () => {
         try {
-          await fetch('http://localhost:8000/api/users/auth/ecp/', {
+          await fetch('https://onecontract.onrender.com/api/users/auth/ecp/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -395,7 +395,7 @@ export const testErrorScenarios = async () => {
       name: 'Missing Required Fields',
       test: async () => {
         try {
-          await fetch('http://localhost:8000/api/users/auth/ecp/', {
+          await fetch('https://onecontract.onrender.com/api/users/auth/ecp/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: 'test@example.com' }),
