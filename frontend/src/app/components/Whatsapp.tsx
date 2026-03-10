@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageCircle } from 'lucide-react';
+import { Send } from 'lucide-react';
 
 export function Whatsapp() {
     const [isVisible, setIsVisible] = useState(false);
@@ -22,22 +22,22 @@ export function Whatsapp() {
 
     return (
         <>
-            {/* WhatsApp Fixed Button */}
+            {/* Telegram Fixed Button */}
             <AnimatePresence>
                 {isVisible && (
                     <motion.a
-                        href="https://wa.me/"
+                        href="https://t.me/"
                         target="_blank"
                         rel="noopener noreferrer"
-                        initial={{ x: 120, opacity: 0 }}
-                        animate={{ x: 100, opacity: 1 }}
-                        exit={{ x: 120, opacity: 0 }}
+                        initial={{ x: 100, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: 100, opacity: 0 }}
                         transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        className="fixed right-6 bottom-6 z-50 bg-[#25D366] hover:bg-[#128C7E] text-white p-4 rounded-full shadow-2xl transition-colors group flex items-center justify-center"
-                        aria-label="Связаться в WhatsApp"
+                        className="fixed right-4 bottom-6 z-[60] bg-[#2AABEE] hover:bg-[#229ED9] text-white w-14 h-14 md:w-auto md:h-auto md:px-5 md:py-3 rounded-full shadow-2xl transition-all hover:scale-105 flex items-center justify-center md:gap-2"
+                        aria-label="Связаться в Telegram"
                     >
-                        <MessageCircle className="w-8 h-8" />
-                        <span className="absolute right-full mr-4 bg-white text-gray-800 px-4 py-2 rounded-xl text-sm font-medium shadow-lg whitespace-nowrap opacity-100 transition-opacity">
+                        <Send className="w-6 h-6 md:w-5 md:h-5 md:-ml-1 md:pr-0.5 relative left-[1px] md:left-0" />
+                        <span className="hidden md:inline font-semibold text-sm whitespace-nowrap">
                             Свяжитесь с нами
                         </span>
                     </motion.a>

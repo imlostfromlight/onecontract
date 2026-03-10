@@ -33,7 +33,7 @@ export function StickyCTA() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-3xl w-full px-4"
+            className="fixed bottom-6 left-4 md:left-1/2 md:-translate-x-1/2 z-40 w-[calc(100%-88px)] md:w-full md:max-w-3xl"
           >
             <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl shadow-2xl p-3 md:p-6">
               <div className="flex items-center justify-between gap-4">

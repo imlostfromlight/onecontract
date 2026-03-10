@@ -27,7 +27,7 @@ export function Calculator() {
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-full mb-6"
           >
             <CalcIcon className="w-4 h-4" />
-            <span className="text-sm font-medium">Интерактивны�� калькулятор</span>
+            <span className="text-sm font-medium">Интерактивный калькулятор</span>
           </motion.div>
 
           <motion.h2

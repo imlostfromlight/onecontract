@@ -1,0 +1,22 @@
+# Core Django & Dependencies
+Django==6.0.3
+asgiref==3.11.1
+sqlparse==0.5.5
+tzdata==2025.3
+django-cf==0.2.9
+
+# REST Framework & CORS
+djangorestframework
+django-cors-headers
+
+# Authentication & Configuration
+django-allauth
+python-decouple
+asn1crypto
+jwt
+
+# Document Parsing & AI Summarization
+pypdf
+python-docx
+groq
+requests
