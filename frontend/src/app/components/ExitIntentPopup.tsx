@@ -22,7 +22,7 @@ export function ExitIntentPopup() {
         setIsVisible(true);
         setHasShown(true);
       }
-    }, 30000);
+    }, 60000);
 
     document.addEventListener('mouseleave', handleMouseLeave);
     
@@ -65,7 +65,7 @@ export function ExitIntentPopup() {
           >
             <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
               {/* Header with gradient */}
-              <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white relative">
+              <div className="bg-[#0F52BA] p-6 text-white relative">
                 <button
                   onClick={handleClose}
                   className="absolute top-4 right-4 p-2 hover:bg-white/20 rounded-lg transition-colors"
@@ -133,7 +133,7 @@ export function ExitIntentPopup() {
                   <Button
                     onClick={handleClaim}
                     size="lg"
-                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold text-lg"
+                    className="w-full bg-[#0F52BA] hover:bg-[#0036A3] text-white font-semibold text-lg"
                   >
                     Получить скидку 20%
                     <ArrowRight className="w-5 h-5 ml-2" />

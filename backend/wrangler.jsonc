@@ -1,0 +1,12 @@
+{
+  "name": "onecontract-backend",
+  "main": "src/index.py",
+  "compatibility_date": "2024-04-04",
+  "d1_databases": [
+    {
+      "binding": "onecontract",
+      "database_name": "onecontract_db",
+      "database_id": "xxxx-xxxx-xxxx"
+    }
+  ]
+}

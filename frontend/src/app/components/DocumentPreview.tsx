@@ -3,7 +3,7 @@ import { FileText, CheckCircle2, Users, Zap } from 'lucide-react';
 
 export function DocumentPreview() {
   return (
-    <section className="py-20 bg-white">
+    <section className="py-20 bg-[#A6C5D7]/15">
       <div className="container mx-auto px-4 max-w-7xl">
         <div className="text-center mb-16">
           <motion.h2

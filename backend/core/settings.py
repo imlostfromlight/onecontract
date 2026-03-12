@@ -50,8 +50,10 @@ INSTALLED_APPS = [
     'allauth.socialaccount.providers.google',
     'allauth.socialaccount.providers.facebook',
 
+
     'users',
     'documents',
+    'django_cf'
 ]
 
 SITE_ID = 1
@@ -91,12 +93,26 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Database — auto-switch: D1 on Cloudflare, SQLite locally
+USE_D1 = config('USE_D1', default='False') == 'True'
+
+if USE_D1:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django_cf.db.backends.d1',
+            'NAME': 'onecontract',
+        }
     }
-}
+    DEFAULT_FILE_STORAGE = 'django_cf.storage.R2Storage'
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+    MEDIA_ROOT = BASE_DIR / 'media'
+    MEDIA_URL = '/media/'
 
 
 # Password validation

@@ -338,7 +338,7 @@ export function DocumentSign() {
                                                     href={doc.file.startsWith('http') ? doc.file : `${API_BASE}${doc.file}`}
                                                     target="_blank"
                                                     rel="noreferrer"
-                                                    className="text-primary hover:underline font-medium"
+                                                    className="text-primary hover:underline font-bold"
                                                 >
                                                     {doc.title}
                                                 </a>
@@ -389,7 +389,6 @@ export function DocumentSign() {
 
                                                 {doc.status === 'SIGNED' && (
                                                     <>
-                                                        <span className="text-green-600 bg-green-50 p-1 rounded-full">✓</span>
                                                         <Button
                                                             size="sm"
                                                             variant="outline"

@@ -144,7 +144,7 @@ export function Header() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-background border-t border-border"
+            className="md:hidden bg-white border-t border-[#A6C5D7]/60 shadow-2xl"
           >
             <nav className="container mx-auto px-4 py-6 space-y-4">
               {navLinks.map((link) => (

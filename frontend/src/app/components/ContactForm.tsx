@@ -1,10 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { User, Mail, Phone, Building, Send } from 'lucide-react';
+import { User, Mail, Phone, Building, Send, CheckCircle } from 'lucide-react';
 import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Card } from './ui/card';
 
 export function ContactForm() {
   const [formData, setFormData] = useState({
@@ -24,19 +21,18 @@ export function ContactForm() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Here you would typically send the data to your backend
     console.log('Form submitted:', formData);
     setIsSubmitted(true);
-    
-    // Reset form after 3 seconds
     setTimeout(() => {
       setIsSubmitted(false);
       setFormData({ name: '', email: '', phone: '', company: '' });
     }, 3000);
   };
 
+  const inputClass = "w-full h-12 px-4 rounded-xl border-2 border-[#A6C5D7] bg-white text-[#000926] placeholder-[#000926]/35 focus:outline-none focus:border-[#0F52BA] focus:ring-2 focus:ring-[#0F52BA]/20 transition-all text-base";
+
   return (
-    <section className="py-20 bg-gradient-to-br from-blue-50 to-purple-50">
+    <section id="contact" className="py-20 bg-[#A6C5D7]/15">
       <div className="container mx-auto px-4 max-w-2xl">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -44,10 +40,10 @@ export function ContactForm() {
           viewport={{ once: true }}
           className="text-center mb-12"
         >
-          <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold text-[#000926] mb-4">
             Остались вопросы?
           </h2>
-          <p className="text-xl text-gray-600">
+          <p className="text-xl text-[#000926]/60">
             Оставьте свои контакты, и мы свяжемся с вами в ближайшее время
           </p>
         </motion.div>
@@ -58,31 +54,31 @@ export function ContactForm() {
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
         >
-          <Card className="p-8 md:p-12 bg-white shadow-xl">
+          <div className="bg-white rounded-2xl shadow-xl border border-[#A6C5D7]/40 p-8 md:p-12">
             {isSubmitted ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className="text-center py-12"
               >
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-6">
-                  <Send className="w-8 h-8 text-green-600" />
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-[#16a34a]/10 rounded-full mb-6">
+                  <CheckCircle className="w-8 h-8 text-[#16a34a]" />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-2">
+                <h3 className="text-2xl font-bold text-[#000926] mb-2">
                   Спасибо за обращение!
                 </h3>
-                <p className="text-gray-600">
+                <p className="text-[#000926]/60">
                   Мы свяжемся с вами в ближайшее время
                 </p>
               </motion.div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={handleSubmit} className="space-y-5">
                 <div>
-                  <Label htmlFor="name" className="text-gray-700 mb-2 flex items-center gap-2">
-                    <User className="w-4 h-4" />
+                  <label htmlFor="name" className="flex items-center gap-2 text-sm font-semibold text-[#000926] mb-2">
+                    <User className="w-4 h-4 text-[#0F52BA]" />
                     Имя *
-                  </Label>
-                  <Input
+                  </label>
+                  <input
                     id="name"
                     name="name"
                     type="text"
@@ -90,16 +86,16 @@ export function ContactForm() {
                     value={formData.name}
                     onChange={handleChange}
                     placeholder="Введите ваше имя"
-                    className="h-12"
+                    className={inputClass}
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="email" className="text-gray-700 mb-2 flex items-center gap-2">
-                    <Mail className="w-4 h-4" />
+                  <label htmlFor="email" className="flex items-center gap-2 text-sm font-semibold text-[#000926] mb-2">
+                    <Mail className="w-4 h-4 text-[#0F52BA]" />
                     Email *
-                  </Label>
-                  <Input
+                  </label>
+                  <input
                     id="email"
                     name="email"
                     type="email"
@@ -107,16 +103,16 @@ export function ContactForm() {
                     value={formData.email}
                     onChange={handleChange}
                     placeholder="example@company.com"
-                    className="h-12"
+                    className={inputClass}
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="phone" className="text-gray-700 mb-2 flex items-center gap-2">
-                    <Phone className="w-4 h-4" />
+                  <label htmlFor="phone" className="flex items-center gap-2 text-sm font-semibold text-[#000926] mb-2">
+                    <Phone className="w-4 h-4 text-[#0F52BA]" />
                     Телефон *
-                  </Label>
-                  <Input
+                  </label>
+                  <input
                     id="phone"
                     name="phone"
                     type="tel"
@@ -124,44 +120,44 @@ export function ContactForm() {
                     value={formData.phone}
                     onChange={handleChange}
                     placeholder="+7 (999) 123-45-67"
-                    className="h-12"
+                    className={inputClass}
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="company" className="text-gray-700 mb-2 flex items-center gap-2">
-                    <Building className="w-4 h-4" />
+                  <label htmlFor="company" className="flex items-center gap-2 text-sm font-semibold text-[#000926] mb-2">
+                    <Building className="w-4 h-4 text-[#0F52BA]" />
                     Компания
-                  </Label>
-                  <Input
+                  </label>
+                  <input
                     id="company"
                     name="company"
                     type="text"
                     value={formData.company}
                     onChange={handleChange}
                     placeholder="Название компании (необязательно)"
-                    className="h-12"
+                    className={inputClass}
                   />
                 </div>
 
                 <Button
                   type="submit"
                   size="lg"
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                  className="w-full bg-[#0F52BA] hover:bg-[#0036A3] text-white text-lg py-6 rounded-xl mt-2"
                 >
                   Отправить заявку
                   <Send className="w-5 h-5 ml-2" />
                 </Button>
 
-                <p className="text-sm text-gray-500 text-center">
+                <p className="text-sm text-[#000926]/40 text-center">
                   Нажимая кнопку, вы соглашаетесь с{' '}
-                  <a href="#" className="text-blue-600 hover:underline">
+                  <a href="#" className="text-[#0F52BA] hover:underline">
                     политикой конфиденциальности
                   </a>
                 </p>
               </form>
             )}
-          </Card>
+          </div>
         </motion.div>
       </div>
     </section>

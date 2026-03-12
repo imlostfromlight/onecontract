@@ -17,7 +17,7 @@ export function Calculator() {
   const percentSaved = ((timeSaved / oldTime) * 100).toFixed(0);
 
   return (
-    <section className="py-20 bg-gradient-to-br from-blue-50 to-purple-50">
+    <section className="py-20 bg-white">
       <div className="container mx-auto px-4 max-w-7xl">
         <div className="text-center mb-12">
           <motion.div
@@ -178,7 +178,7 @@ export function Calculator() {
             {/* Productivity */}
             <motion.div
               whileHover={{ scale: 1.02 }}
-              className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-8 text-white shadow-xl"
+              className="bg-gradient-to-br from-[#0F52BA] to-[#0036A3] rounded-2xl p-8 text-white shadow-xl"
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className="bg-white/20 p-3 rounded-lg">

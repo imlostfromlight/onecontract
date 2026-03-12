@@ -59,7 +59,7 @@ function FeatureItem({ feature, index }: { feature: typeof features[0], index: n
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: index * 0.1 }}
-          className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-all border border-gray-100"
+          className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition-all border border-[#A6C5D7]/40"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-1 text-left">
@@ -85,7 +85,7 @@ function FeatureItem({ feature, index }: { feature: typeof features[0], index: n
 
 export function HowItWorks() {
   return (
-    <section className="py-20 bg-gray-50">
+    <section className="py-20 bg-[#A6C5D7]/15">
       <div className="container mx-auto px-4 max-w-7xl">
         <div className="text-center mb-16">
           <motion.h2
