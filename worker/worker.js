@@ -1,6 +1,6 @@
 // ============================================================
 // OneContract API — Cloudflare Worker (single-file, no deps)
-// Paste this into the Cloudflare Dashboard worker editor
+// File storage: D1 base64 blobs (no R2 required)
 // ============================================================
 
 export default {
@@ -100,8 +100,8 @@ async function router(request, env) {
     if ((p = matchPath('/api/documents/public/:uuid/sign', path)) && method === 'POST')
       return R(await publicSign(request, env, p));
 
-    if ((p = matchPath('/api/documents/file/:key', path)) && method === 'GET')
-      return R(await serveFile(request, env, p));
+    if ((p = matchPath('/api/documents/:id/file', path)) && method === 'GET')
+      return R(await serveDocFile(request, env, p));
 
     if ((p = matchPath('/api/documents/:id', path)) && method === 'DELETE')
       return R(await deleteDoc(request, env, p));
@@ -113,7 +113,7 @@ async function router(request, env) {
       return R(await verifyDoc(request, env, p));
   }
 
-  if (path === '/health') return R(json({ status: 'ok', db: 'D1', storage: 'R2' }));
+  if (path === '/health') return R(json({ status: 'ok', db: 'D1', storage: 'D1' }));
 
   return R(json({ detail: 'Not found' }, 404));
 }
@@ -172,6 +172,28 @@ async function verifyPassword(pwd, stored) {
   } catch { return false; }
 }
 
+// ── File helpers ──────────────────────────────────────────────────────────────
+
+function bufToBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s);
+}
+
+function base64ToResponse(b64, fileName, mimeType) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': mimeType || 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="${fileName}"`,
+      'Cache-Control': 'private, max-age=3600',
+    },
+  });
+}
+
 // ── Auth middleware ───────────────────────────────────────────────────────────
 
 async function authenticate(request, env) {
@@ -201,7 +223,9 @@ function safeUser(u) {
 
 async function docWithSigs(db, doc) {
   const sigs = (await db.prepare('SELECT * FROM document_signatures WHERE document_id = ? ORDER BY signed_at ASC').bind(doc.id).all()).results;
-  return { ...doc, signatures: sigs, signature_count: sigs.length };
+  // Don't expose file_data in listings
+  const { file_data, ...rest } = doc;
+  return { ...rest, signatures: sigs, signature_count: sigs.length };
 }
 
 // ── Auth handlers ─────────────────────────────────────────────────────────────
@@ -290,11 +314,11 @@ async function listDocs(request, env) {
     const user = await requireUser(request, env);
     let rows;
     if (user.role === 'SUPERADMIN' || user.role === 'ADMIN') {
-      rows = (await env.DB.prepare('SELECT * FROM documents ORDER BY created_at DESC').all()).results;
+      rows = (await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents ORDER BY created_at DESC').all()).results;
     } else if (user.role === 'ORGANIZATION') {
-      rows = (await env.DB.prepare('SELECT * FROM documents WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all()).results;
+      rows = (await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all()).results;
     } else {
-      rows = (await env.DB.prepare('SELECT d.* FROM documents d INNER JOIN document_signatures s ON s.document_id=d.id WHERE s.client_id=? ORDER BY d.created_at DESC').bind(user.id).all()).results;
+      rows = (await env.DB.prepare('SELECT d.id,d.user_id,d.template_id,d.uuid,d.title,d.file_name,d.status,d.org_signature,d.org_signed_at,d.created_at FROM documents d INNER JOIN document_signatures s ON s.document_id=d.id WHERE s.client_id=? ORDER BY d.created_at DESC').bind(user.id).all()).results;
     }
     return json(await Promise.all(rows.map(d => docWithSigs(env.DB, d))));
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
@@ -309,12 +333,14 @@ async function createDoc(request, env) {
     const title = form.get('title') || file?.name || 'Untitled';
     const templateId = form.get('template_id') || null;
     if (!file) return json({ detail: 'file is required' }, 400);
+    const buf = await file.arrayBuffer();
+    const fileData = bufToBase64(buf);
     const docUuid = crypto.randomUUID();
-    const key = `documents/${docUuid}/${file.name}`;
-    await env.BUCKET.put(key, file.stream(), { httpMetadata: { contentType: file.type || 'application/octet-stream' } });
-    const res = await env.DB.prepare('INSERT INTO documents (user_id,template_id,uuid,title,file_key,file_name) VALUES (?,?,?,?,?,?)')
-      .bind(user.id, templateId, docUuid, title, key, file.name).run();
-    const doc = await env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(res.meta.last_row_id).first();
+    const mimeType = file.type || 'application/octet-stream';
+    const res = await env.DB.prepare(
+      'INSERT INTO documents (user_id,template_id,uuid,title,file_key,file_name,file_data,file_mime) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind(user.id, templateId, docUuid, title, docUuid, file.name, fileData, mimeType).run();
+    const doc = await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents WHERE id = ?').bind(res.meta.last_row_id).first();
     return json(await docWithSigs(env.DB, doc), 201);
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
@@ -323,17 +349,16 @@ async function deleteDoc(request, env, params) {
   try {
     const user = await requireUser(request, env);
     requireRole(user, 'ORGANIZATION', 'SUPERADMIN');
-    const doc = await env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(params.id).first();
+    const doc = await env.DB.prepare('SELECT id,user_id FROM documents WHERE id = ?').bind(params.id).first();
     if (!doc) return json({ detail: 'Not found' }, 404);
     if (doc.user_id !== user.id && user.role !== 'SUPERADMIN') return json({ detail: 'Permission denied' }, 403);
-    await env.BUCKET.delete(doc.file_key).catch(() => {});
     await env.DB.prepare('DELETE FROM documents WHERE id = ?').bind(doc.id).run();
     return new Response(null, { status: 204 });
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
 
 async function publicRetrieve(request, env, params) {
-  const doc = await env.DB.prepare('SELECT * FROM documents WHERE uuid = ?').bind(params.uuid).first();
+  const doc = await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents WHERE uuid = ?').bind(params.uuid).first();
   if (!doc) return json({ detail: 'Not found' }, 404);
   return json(await docWithSigs(env.DB, doc));
 }
@@ -351,21 +376,18 @@ async function publicSign(request, env, params) {
     const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.username;
     await env.DB.prepare('INSERT INTO document_signatures (document_id,client_id,client_email,client_name,signature) VALUES (?,?,?,?,?)')
       .bind(doc.id, user.id, user.email, name, signature).run();
-    const updated = await env.DB.prepare('SELECT * FROM documents WHERE id = ?').bind(doc.id).first();
+    const updated = await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents WHERE id = ?').bind(doc.id).first();
     return json({ detail: 'Signed successfully', document: await docWithSigs(env.DB, updated) });
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
 
-async function serveFile(request, env, params) {
+async function serveDocFile(request, env, params) {
   try {
     await requireUser(request, env);
-    const key = params.key;
-    const obj = await env.BUCKET.get(key);
-    if (!obj) return json({ detail: 'File not found' }, 404);
-    const headers = new Headers();
-    obj.writeHttpMetadata(headers);
-    headers.set('Cache-Control', 'private, max-age=3600');
-    return new Response(obj.body, { headers });
+    const doc = await env.DB.prepare('SELECT file_data,file_name,file_mime FROM documents WHERE id = ?').bind(params.id).first();
+    if (!doc || !doc.file_data) return json({ detail: 'File not found' }, 404);
+    const origin = request.headers.get('Origin') || '';
+    return cors(base64ToResponse(doc.file_data, doc.file_name, doc.file_mime), origin);
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
 
@@ -373,13 +395,13 @@ async function orgSign(request, env, params) {
   try {
     const user = await requireUser(request, env);
     requireRole(user, 'ORGANIZATION', 'SUPERADMIN');
-    const doc = await env.DB.prepare('SELECT * FROM documents WHERE id=? AND user_id=?').bind(params.id, user.id).first();
+    const doc = await env.DB.prepare('SELECT id,user_id,org_signed_at FROM documents WHERE id=? AND user_id=?').bind(params.id, user.id).first();
     if (!doc) return json({ detail: 'Not found' }, 404);
     if (doc.org_signed_at) return json({ detail: 'Already signed by org' }, 400);
     const now = new Date().toISOString();
     await env.DB.prepare('UPDATE documents SET org_signature=?,org_signed_at=? WHERE id=?')
       .bind(`ORG_APPROVED_${user.id}`, now, doc.id).run();
-    const updated = await env.DB.prepare('SELECT * FROM documents WHERE id=?').bind(doc.id).first();
+    const updated = await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents WHERE id=?').bind(doc.id).first();
     return json(await docWithSigs(env.DB, updated));
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
@@ -388,10 +410,10 @@ async function closeDoc(request, env, params) {
   try {
     const user = await requireUser(request, env);
     requireRole(user, 'ORGANIZATION', 'SUPERADMIN');
-    const doc = await env.DB.prepare('SELECT * FROM documents WHERE id=? AND user_id=?').bind(params.id, user.id).first();
+    const doc = await env.DB.prepare('SELECT id,user_id FROM documents WHERE id=? AND user_id=?').bind(params.id, user.id).first();
     if (!doc) return json({ detail: 'Not found' }, 404);
     await env.DB.prepare("UPDATE documents SET status='CLOSED' WHERE id=?").bind(doc.id).run();
-    const updated = await env.DB.prepare('SELECT * FROM documents WHERE id=?').bind(doc.id).first();
+    const updated = await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents WHERE id=?').bind(doc.id).first();
     return json(await docWithSigs(env.DB, updated));
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
@@ -399,7 +421,7 @@ async function closeDoc(request, env, params) {
 async function verifyDoc(request, env, params) {
   try {
     await requireUser(request, env);
-    const doc = await env.DB.prepare('SELECT * FROM documents WHERE id=?').bind(params.id).first();
+    const doc = await env.DB.prepare('SELECT id,org_signed_at FROM documents WHERE id=?').bind(params.id).first();
     if (!doc) return json({ detail: 'Not found' }, 404);
     const sigs = (await env.DB.prepare('SELECT * FROM document_signatures WHERE document_id=? ORDER BY signed_at ASC').bind(doc.id).all()).results;
     return json({ org_signed_at: doc.org_signed_at, client_signatures: sigs });
@@ -413,8 +435,8 @@ async function listTemplates(request, env) {
     const user = await requireUser(request, env);
     requireRole(user, 'ORGANIZATION', 'SUPERADMIN');
     const rows = user.role === 'SUPERADMIN'
-      ? (await env.DB.prepare('SELECT * FROM templates ORDER BY created_at DESC').all()).results
-      : (await env.DB.prepare('SELECT * FROM templates WHERE organization_id=? ORDER BY created_at DESC').bind(user.id).all()).results;
+      ? (await env.DB.prepare('SELECT id,organization_id,title,description,file_name,template_fields,created_at FROM templates ORDER BY created_at DESC').all()).results
+      : (await env.DB.prepare('SELECT id,organization_id,title,description,file_name,template_fields,created_at FROM templates WHERE organization_id=? ORDER BY created_at DESC').bind(user.id).all()).results;
     return json(rows.map(t => ({ ...t, template_fields: JSON.parse(t.template_fields || '[]') })));
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
@@ -428,18 +450,19 @@ async function createTemplate(request, env) {
     const title = form.get('title') || file?.name || 'Untitled';
     const description = form.get('description') || '';
     if (!file) return json({ detail: 'file is required' }, 400);
-    const key = `templates/${crypto.randomUUID()}/${file.name}`;
     const buf = await file.arrayBuffer();
+    const fileData = bufToBase64(buf);
+    const mimeType = file.type || 'application/octet-stream';
     let placeholders = [];
-    // Basic placeholder detection for plain text files
     if (!file.name.toLowerCase().endsWith('.docx')) {
       const text = new TextDecoder().decode(buf);
       placeholders = [...new Set([...text.matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]))].sort();
     }
-    await env.BUCKET.put(key, buf, { httpMetadata: { contentType: file.type || 'application/octet-stream' } });
-    const res = await env.DB.prepare('INSERT INTO templates (organization_id,title,description,file_key,file_name,template_fields) VALUES (?,?,?,?,?,?)')
-      .bind(user.id, title, description, key, file.name, JSON.stringify(placeholders)).run();
-    const tmpl = await env.DB.prepare('SELECT * FROM templates WHERE id=?').bind(res.meta.last_row_id).first();
+    const key = crypto.randomUUID();
+    const res = await env.DB.prepare(
+      'INSERT INTO templates (organization_id,title,description,file_key,file_name,file_data,file_mime,template_fields) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind(user.id, title, description, key, file.name, fileData, mimeType, JSON.stringify(placeholders)).run();
+    const tmpl = await env.DB.prepare('SELECT id,organization_id,title,description,file_name,template_fields,created_at FROM templates WHERE id=?').bind(res.meta.last_row_id).first();
     return json({ ...tmpl, template_fields: JSON.parse(tmpl.template_fields || '[]') }, 201);
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
@@ -448,10 +471,9 @@ async function deleteTemplate(request, env, params) {
   try {
     const user = await requireUser(request, env);
     requireRole(user, 'ORGANIZATION', 'SUPERADMIN');
-    const tmpl = await env.DB.prepare('SELECT * FROM templates WHERE id=?').bind(params.id).first();
+    const tmpl = await env.DB.prepare('SELECT id,organization_id FROM templates WHERE id=?').bind(params.id).first();
     if (!tmpl) return json({ detail: 'Not found' }, 404);
     if (tmpl.organization_id !== user.id && user.role !== 'SUPERADMIN') return json({ detail: 'Permission denied' }, 403);
-    await env.BUCKET.delete(tmpl.file_key).catch(() => {});
     await env.DB.prepare('DELETE FROM templates WHERE id=?').bind(tmpl.id).run();
     return new Response(null, { status: 204 });
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
@@ -462,23 +484,22 @@ async function useTemplate(request, env, params) {
     const user = await requireUser(request, env);
     requireRole(user, 'ORGANIZATION', 'SUPERADMIN');
     const tmpl = await env.DB.prepare('SELECT * FROM templates WHERE id=?').bind(params.id).first();
-    if (!tmpl) return json({ detail: 'Not found' }, 404);
+    if (!tmpl || !tmpl.file_data) return json({ detail: 'Template file missing' }, 404);
     const { title = tmpl.title, fields = {} } = await request.json();
-    const obj = await env.BUCKET.get(tmpl.file_key);
-    if (!obj) return json({ detail: 'Template file missing from storage' }, 404);
-    let buf = await obj.arrayBuffer();
+    let fileData = tmpl.file_data;
     // Placeholder fill for plain text / XML files
     if (!tmpl.file_name.toLowerCase().endsWith('.docx')) {
-      let text = new TextDecoder().decode(buf);
+      const binary = atob(fileData);
+      let text = '';
+      for (let i = 0; i < binary.length; i++) text += String.fromCharCode(binary.charCodeAt(i));
       text = text.replace(/\{\{(\w+)\}\}/g, (_, k) => fields[k] ?? `{{${k}}}`);
-      buf = new TextEncoder().encode(text).buffer;
+      fileData = btoa(text);
     }
     const docUuid = crypto.randomUUID();
-    const key = `documents/${docUuid}/${tmpl.file_name}`;
-    await env.BUCKET.put(key, buf, { httpMetadata: { contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } });
-    const res = await env.DB.prepare('INSERT INTO documents (user_id,template_id,uuid,title,file_key,file_name) VALUES (?,?,?,?,?,?)')
-      .bind(user.id, tmpl.id, docUuid, title, key, tmpl.file_name).run();
-    const doc = await env.DB.prepare('SELECT * FROM documents WHERE id=?').bind(res.meta.last_row_id).first();
+    const res = await env.DB.prepare(
+      'INSERT INTO documents (user_id,template_id,uuid,title,file_key,file_name,file_data,file_mime) VALUES (?,?,?,?,?,?,?,?)'
+    ).bind(user.id, tmpl.id, docUuid, title, docUuid, tmpl.file_name, fileData, tmpl.file_mime || 'application/octet-stream').run();
+    const doc = await env.DB.prepare('SELECT id,user_id,template_id,uuid,title,file_name,status,org_signature,org_signed_at,created_at FROM documents WHERE id=?').bind(res.meta.last_row_id).first();
     return json(await docWithSigs(env.DB, doc), 201);
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
@@ -486,14 +507,9 @@ async function useTemplate(request, env, params) {
 async function serveTemplateFile(request, env, params) {
   try {
     await requireUser(request, env);
-    const tmpl = await env.DB.prepare('SELECT * FROM templates WHERE id=?').bind(params.id).first();
-    if (!tmpl) return json({ detail: 'Not found' }, 404);
-    const obj = await env.BUCKET.get(tmpl.file_key);
-    if (!obj) return json({ detail: 'File not found' }, 404);
-    const headers = new Headers();
-    obj.writeHttpMetadata(headers);
-    headers.set('Content-Disposition', `attachment; filename="${tmpl.file_name}"`);
-    return new Response(obj.body, { headers });
+    const tmpl = await env.DB.prepare('SELECT file_data,file_name,file_mime FROM templates WHERE id=?').bind(params.id).first();
+    if (!tmpl || !tmpl.file_data) return json({ detail: 'File not found' }, 404);
+    return cors(base64ToResponse(tmpl.file_data, tmpl.file_name, tmpl.file_mime), request.headers.get('Origin') || '');
   } catch (e) { return json({ detail: e.detail || String(e) }, e.status || 500); }
 }
 

@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS templates (
   description     TEXT DEFAULT '',
   file_key        TEXT NOT NULL,
   file_name       TEXT NOT NULL,
+  file_data       TEXT DEFAULT '',
+  file_mime       TEXT DEFAULT 'application/octet-stream',
   template_fields TEXT DEFAULT '[]',
   created_at      TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (organization_id) REFERENCES users(id) ON DELETE CASCADE
@@ -33,6 +35,8 @@ CREATE TABLE IF NOT EXISTS documents (
   title         TEXT NOT NULL,
   file_key      TEXT NOT NULL,
   file_name     TEXT NOT NULL,
+  file_data     TEXT DEFAULT '',
+  file_mime     TEXT DEFAULT 'application/octet-stream',
   status        TEXT DEFAULT 'DRAFT' CHECK(status IN ('DRAFT','CLOSED')),
   org_signature TEXT,
   org_signed_at TEXT,

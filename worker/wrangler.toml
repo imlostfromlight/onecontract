@@ -8,10 +8,6 @@ binding = "DB"
 database_name = "onecontract"
 database_id = "8330cbe4-e846-41c4-b94e-b8949bbf4884"
 
-[[r2_buckets]]
-binding = "BUCKET"
-bucket_name = "onecontract-files"
-
 [vars]
 FRONTEND_URL = "https://onecontract.pages.dev"
 
