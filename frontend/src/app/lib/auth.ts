@@ -53,7 +53,7 @@ export async function getUserInfo(token?: string): Promise<any> {
   const response = await fetch(`${API_URL}/auth/user/`, {
     method: 'GET',
     headers: {
-      'Authorization': `Token ${authToken}`,
+      'Authorization': `Bearer ${authToken}`,
       'Content-Type': 'application/json',
     },
   });

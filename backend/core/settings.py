@@ -262,8 +262,11 @@ GOOGLE_CLIENT_SECRET = config('GOOGLE_CLIENT_SECRET', default='')
 FACEBOOK_APP_ID = config('FACEBOOK_APP_ID', default='')
 FACEBOOK_APP_SECRET = config('FACEBOOK_APP_SECRET', default='')
 
-# Groq API Key for document summarization
+# Groq API Key
 GROQ_API_KEY = config('GROQ_API_KEY', default='')
+
+# MongoDB (for AI chat history)
+MONGODB_URI = config('MONGODB_URI', default='')
 
 # NCALayer (ЕЦП) Digital Signature Settings
 NCALAYER_CONFIG = {

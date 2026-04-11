@@ -10,10 +10,11 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.
 interface Document {
     id: number;
     title: string;
-    status: 'DRAFT' | 'SIGNED';
+    status: 'DRAFT' | 'CLOSED';
     created_at: string;
-    client?: number;
-    uuid?: string; // Should be available from backend now
+    uuid?: string;
+    signature_count: number;
+    org_signed_at?: string;
 }
 
 export function Dashboard() {
@@ -30,7 +31,7 @@ export function Dashboard() {
         if (!token) return;
         try {
             const res = await fetch(`${API_BASE}/api/documents/`, {
-                headers: { Authorization: `Token ${token}` },
+                headers: { Authorization: `Bearer ${token}` },
             });
             if (res.ok) {
                 const data = await res.json();
@@ -56,8 +57,8 @@ export function Dashboard() {
 
     const stats = [
         { label: 'Total Contracts', value: documents.length, icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50' },
-        { label: 'Signed', value: documents.filter(d => d.status === 'SIGNED').length, icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
-        { label: 'Pending', value: documents.filter(d => d.status === 'DRAFT').length, icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-50' },
+        { label: 'Total Signers', value: documents.reduce((s, d) => s + (d.signature_count || 0), 0), icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50' },
+        { label: 'Active', value: documents.filter(d => d.status !== 'CLOSED').length, icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-50' },
     ];
 
     return (
@@ -124,17 +125,16 @@ export function Dashboard() {
                                             <span className="font-medium text-gray-900">{doc.title}</span>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${doc.status === 'SIGNED' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                                                }`}>
-                                                {doc.status === 'SIGNED' ? 'Signed' : 'Pending'}
+                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${doc.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' : 'bg-green-100 text-green-800'}`}>
+                                                {doc.status === 'CLOSED' ? 'Closed' : `Active (${doc.signature_count} signed)`}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-500">
                                             {new Date(doc.created_at).toLocaleDateString()}
                                         </td>
                                         <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                            {/* Share Button for Pending Docs */}
-                                            {doc.status !== 'SIGNED' && doc.uuid && (user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN') && (
+                                            {/* Share Button */}
+                                            {doc.status !== 'CLOSED' && doc.uuid && (user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN') && (
                                                 <Button
                                                     size="sm"
                                                     variant="ghost"

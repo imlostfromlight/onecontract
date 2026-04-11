@@ -1,25 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { QRCodeSVG } from 'qrcode.react'; // Add QRCodeSVG import
+import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import NCALayerService from '../lib/ncalayer';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { Whatsapp } from '../components/Whatsapp';
-import { AISummaryModal } from '../components/AISummaryModal';
+import { AIChatWidget } from '../components/AIChatWidget';
+import { Users, CheckCircle, Clock, Copy, Lock } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
+
+interface Signature {
+    id: number;
+    client: number | null;
+    client_email: string;
+    client_name: string;
+    signed_at: string;
+}
 
 interface Document {
     id: number;
     title: string;
     file: string;
-    status: 'DRAFT' | 'SIGNED';
+    status: 'DRAFT' | 'CLOSED';
     created_at: string;
-    signed_at?: string;
+    uuid?: string;
     org_signed_at?: string;
-    org_signature?: string;
-    signature?: string;
+    signatures: Signature[];
+    signature_count: number;
 }
 
 export function DocumentSign() {
@@ -29,106 +38,62 @@ export function DocumentSign() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // AI Summary state
-    const [summaryModalOpen, setSummaryModalOpen] = useState(false);
-    const [summaryLoading, setSummaryLoading] = useState(false);
-    const [summaryError, setSummaryError] = useState<string | null>(null);
-    const [currentSummary, setCurrentSummary] = useState<{
-        key_points: string[];
-        suspicious_clauses: string[];
-    } | null>(null);
-    const [summaryDocTitle, setSummaryDocTitle] = useState<string>('');
 
-    // --- eGov Mobile QR State ---
+    // eGov
     const [egovModalOpen, setEgovModalOpen] = useState(false);
     const [egovSessionId, setEgovSessionId] = useState<string | null>(null);
     const [egovSignUrl, setEgovSignUrl] = useState<string | null>(null);
     const [egovStatus, setEgovStatus] = useState<'LOADING' | 'WAITING' | 'SIGNED' | 'EXPIRED' | 'ERROR'>('LOADING');
     const [currentDocId, setCurrentDocId] = useState<number | null>(null);
 
-    // eGov Polling
+    // Signers panel
+    const [expandedDocId, setExpandedDocId] = useState<number | null>(null);
+
+    useEffect(() => { fetchDocuments(); }, [token]);
+
+    // eGov polling
     useEffect(() => {
         if (!egovSessionId || egovStatus !== 'WAITING' || !currentDocId) return;
-
-        const intervalId = setInterval(async () => {
+        const id = setInterval(async () => {
             try {
                 const res = await fetch(`${API_BASE}/api/documents/${currentDocId}/sign_egov_status/?session_id=${egovSessionId}`, {
-                    headers: { Authorization: `Token ${token}` }
+                    headers: { Authorization: `Bearer ${token}` }
                 });
                 const data = await res.json();
-
                 if (data.status === 'SIGNED') {
                     setEgovStatus('SIGNED');
-                    // Update document in list
                     setDocuments(docs => docs.map(d => d.id === data.document.id ? data.document : d));
-                    // Close modal after delay
-                    setTimeout(() => {
-                        setEgovModalOpen(false);
-                        setEgovSessionId(null);
-                        setCurrentDocId(null);
-                        // alert("Документ успешно подписан через eGov Mobile!");
-                    }, 2000);
-                } else if (data.status === 'EXPIRED') {
-                    setEgovStatus('EXPIRED');
-                } else if (data.status === 'ERROR') {
-                    setEgovStatus('ERROR');
-                    // Don't close immediately, let user see error
-                }
-            } catch (e) {
-                console.error(e);
-            }
+                    setTimeout(() => { setEgovModalOpen(false); setEgovSessionId(null); setCurrentDocId(null); }, 2000);
+                } else if (data.status === 'EXPIRED') setEgovStatus('EXPIRED');
+                else if (data.status === 'ERROR') setEgovStatus('ERROR');
+            } catch (e) { console.error(e); }
         }, 2000);
-        return () => clearInterval(intervalId);
+        return () => clearInterval(id);
     }, [egovSessionId, egovStatus, currentDocId, token]);
-
-
-    useEffect(() => {
-        fetchDocuments();
-    }, [token]);
 
     const fetchDocuments = async () => {
         if (!token) return;
-        try {
-            const res = await fetch(`${API_BASE}/api/documents/`, {
-                headers: { Authorization: `Token ${token}` },
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setDocuments(data);
-            }
-        } catch (e) {
-            console.error(e);
-        }
+        const res = await fetch(`${API_BASE}/api/documents/`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) setDocuments(await res.json());
     };
 
     const handleUpload = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!file || !token) return;
-
-        setLoading(true);
-        setError(null);
-
+        setLoading(true); setError(null);
         const formData = new FormData();
         formData.append('file', file);
         formData.append('title', file.name);
-
         try {
-            // 1. Upload
             const res = await fetch(`${API_BASE}/api/documents/`, {
                 method: 'POST',
-                headers: { Authorization: `Token ${token}` },
+                headers: { Authorization: `Bearer ${token}` },
                 body: formData,
             });
-
             if (!res.ok) throw new Error('Failed to upload');
-
             const doc = await res.json();
             setDocuments([doc, ...documents]);
             setFile(null);
-
-            // 2. Auto-trigger sign? Or let user click sign?
-            // User asked to "submit and sign", so let's try to do it in flow or offer a button.
-            // Let's offer a "Sign Now" button on the item.
         } catch (err: any) {
             setError(err.message);
         } finally {
@@ -136,334 +101,285 @@ export function DocumentSign() {
         }
     };
 
-    const handleEGovSign = async (doc: Document) => {
-        setEgovModalOpen(true);
-        setEgovStatus('LOADING');
-        setCurrentDocId(doc.id);
-
-        try {
-            // Use 0 as offset for doc.id if needed, but it should be doc.id
-            const res = await fetch(`${API_BASE}/api/documents/${doc.id}/sign_egov_init/`, {
-                method: 'POST',
-                headers: { Authorization: `Token ${token}` },
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setEgovSessionId(data.session_id);
-                setEgovSignUrl(data.sign_url);
-                setEgovStatus('WAITING');
-            } else {
-                setEgovStatus('ERROR');
-                console.error(data);
-            }
-        } catch (e) {
-            console.error(e);
-            setEgovStatus('ERROR');
-        }
-    };
-
-    // Dev Helper
-    const handleMockConfirm = async () => {
-        if (!egovSessionId) return;
-        try {
-            await fetch(`${API_BASE}/api/auth/egov/qr/confirm/`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    session_id: egovSessionId,
-                    iin: user?.username || "111111111111",
-                    email: user?.email || "mock@test.com",
-                    first_name: user?.first_name || "Mock",
-                    last_name: user?.last_name || "User"
-                })
-            });
-        } catch (e) { console.error(e); }
-    };
-
-    const handleSign = async (doc: Document) => {
-        if (!token) return;
-        setLoading(true);
-        setError(null);
-
-        try {
-            // 1. Get file content as Base64 (NCALayer needs it)
-            // Since we already uploaded it, we might not have it in memory if it's from the list.
-            // But for newly uploaded, we can keep it.
-            // If we want to sign *any* document from list, we need to download it or use its hash.
-            // NCALayer needs the DATA to sign (if we use createCAdESFromBase64).
-            // Downloading the file from backend to sign it is a bit heavy, but correct for "File Signing".
-
-            // Let's fetch the file blob
-            const fileRes = await fetch(doc.file); // doc.file is absolute URL usually?
-            let blob = await fileRes.blob();
-
-            // Convert to Base64
-            const reader = new FileReader();
-            reader.readAsDataURL(blob);
-            reader.onloadend = async () => {
-                const base64data = (reader.result as string).split(',')[1];
-
-                try {
-                    // 2. Sign with NCALayer
-                    const signature = await NCALayerService.signFile(base64data);
-
-                    // 3. Send signature to backend
-                    const signRes = await fetch(`${API_BASE}/api/documents/${doc.id}/sign/`, {
-                        method: 'POST',
-                        headers: {
-                            'Authorization': `Token ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            signature: signature,
-                            signed_data: base64data // Optional, for verification
-                        })
-                    });
-
-                    if (signRes.ok) {
-                        const updatedDoc = await signRes.json();
-                        setDocuments(docs => docs.map(d => d.id === updatedDoc.id ? updatedDoc : d));
-                        alert('Документ успешно подписан!');
-                    } else {
-                        const err = await signRes.json();
-                        throw new Error(err.detail || 'Ошибка при сохранении подписи');
-                    }
-                } catch (e: any) {
-                    console.error(e);
-                    setError(e.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-        } catch (e: any) {
-            setError(e.message);
-            setLoading(false);
-        }
+    const handleCopyLink = (uuid: string) => {
+        navigator.clipboard.writeText(`${window.location.origin}/sign/${uuid}`);
+        alert('Ссылка скопирована!');
     };
 
     const handleOrgSign = async (doc: Document) => {
         if (!token) return;
-        setLoading(true);
-        setError(null);
+        setLoading(true); setError(null);
         try {
             const res = await fetch(`${API_BASE}/api/documents/${doc.id}/org_sign/`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Token ${token}`,
-                    'Content-Type': 'application/json',
-                },
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({}),
             });
             if (res.ok) {
-                const updatedDoc = await res.json();
-                setDocuments(docs => docs.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+                const updated = await res.json();
+                setDocuments(docs => docs.map(d => d.id === updated.id ? updated : d));
             } else {
                 const err = await res.json();
-                setError(err.detail || 'Ошибка при подписании');
+                setError(err.detail);
             }
-        } catch (e: any) {
-            setError(e.message);
-        } finally {
-            setLoading(false);
+        } catch (e: any) { setError(e.message); }
+        finally { setLoading(false); }
+    };
+
+    const handleClose = async (doc: Document) => {
+        if (!token || !confirm('Закрыть договор? Новые подписи приниматься не будут.')) return;
+        const res = await fetch(`${API_BASE}/api/documents/${doc.id}/close/`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        if (res.ok) {
+            const updated = await res.json();
+            setDocuments(docs => docs.map(d => d.id === updated.id ? updated : d));
         }
+    };
+
+    const handleSign = async (doc: Document) => {
+        if (!token) return;
+        setLoading(true); setError(null);
+        try {
+            const fileRes = await fetch(doc.file);
+            const blob = await fileRes.blob();
+            const reader = new FileReader();
+            reader.readAsDataURL(blob);
+            reader.onloadend = async () => {
+                const base64data = (reader.result as string).split(',')[1];
+                try {
+                    const signature = await NCALayerService.signFile(base64data);
+                    const signRes = await fetch(`${API_BASE}/api/documents/public/${doc.uuid}/sign/`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ signature, signed_data: base64data }),
+                    });
+                    if (signRes.ok) {
+                        const data = await signRes.json();
+                        setDocuments(docs => docs.map(d => d.id === data.document.id ? data.document : d));
+                        alert('Документ успешно подписан!');
+                    } else {
+                        const err = await signRes.json();
+                        setError(err.detail || 'Ошибка при сохранении подписи');
+                    }
+                } catch (e: any) { setError(e.message); }
+                finally { setLoading(false); }
+            };
+        } catch (e: any) { setError(e.message); setLoading(false); }
+    };
+
+    const handleEGovSign = async (doc: Document) => {
+        setEgovModalOpen(true); setEgovStatus('LOADING'); setCurrentDocId(doc.id);
+        try {
+            const res = await fetch(`${API_BASE}/api/documents/${doc.id}/sign_egov_init/`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (res.ok) { setEgovSessionId(data.session_id); setEgovSignUrl(data.sign_url); setEgovStatus('WAITING'); }
+            else setEgovStatus('ERROR');
+        } catch { setEgovStatus('ERROR'); }
+    };
+
+    const handleMockConfirm = async () => {
+        if (!egovSessionId) return;
+        await fetch(`${API_BASE}/api/auth/egov/qr/confirm/`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: egovSessionId, iin: user?.username || "111111111111", email: user?.email || "mock@test.com", first_name: user?.first_name || "Mock", last_name: user?.last_name || "User" })
+        });
     };
 
     const handleVerify = async (doc: Document) => {
-        try {
-            const res = await fetch(`${API_BASE}/api/documents/${doc.id}/verify/`, {
-                headers: { Authorization: `Token ${token}` },
-            });
-            const data = await res.json();
-            if (res.ok) {
-                alert(`Документ подписан:\n\nКем: ${data.signer}\nИИН: ${data.iin}\nДата: ${new Date(data.signed_at).toLocaleString()}`);
-            } else {
-                alert(`Ошибка проверки: ${data.detail || data.error}`);
-            }
-        } catch (e) {
-            console.error(e);
-            alert('Ошибка сети при проверке подписи');
-        }
+        const res = await fetch(`${API_BASE}/api/documents/${doc.id}/verify/`, { headers: { Authorization: `Bearer ${token}` } });
+        const data = await res.json();
+        if (res.ok) {
+            const orgInfo = data.org_signed_at ? `\nОрганизация подписала: ${new Date(data.org_signed_at).toLocaleString()}` : '';
+            const clientInfo = data.client_signatures?.length
+                ? `\nКлиенты (${data.client_signatures.length}):\n` + data.client_signatures.map((s: any) => `  • ${s.client_name} (${new Date(s.signed_at).toLocaleString()})`).join('\n')
+                : '\nКлиенты: не подписан';
+            alert(`Подписи договора "${doc.title}":${orgInfo}${clientInfo}`);
+        } else alert(`Ошибка: ${data.detail}`);
     };
 
-    const handleSummarize = async (doc: Document) => {
-        setSummaryDocTitle(doc.title);
-        setSummaryModalOpen(true);
-        setSummaryLoading(true);
-        setSummaryError(null);
-        setCurrentSummary(null);
 
-        try {
-            const res = await fetch(`${API_BASE}/api/documents/${doc.id}/summarize/`, {
-                headers: { Authorization: `Token ${token}` },
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setCurrentSummary({
-                    key_points: data.key_points || [],
-                    suspicious_clauses: data.suspicious_clauses || []
-                });
-            } else {
-                setSummaryError(data.detail || 'Ошибка анализа документа');
-            }
-        } catch (e) {
-            console.error(e);
-            setSummaryError('Ошибка сети при анализе документа');
-        } finally {
-            setSummaryLoading(false);
-        }
-    };
+    const isOrg = user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN';
 
     return (
         <div className="flex flex-col min-h-screen bg-background text-foreground">
             <Header />
 
             <main className="flex-grow pt-28 pb-12 px-4">
-                <div className="container mx-auto max-w-5xl">
-                    <h1 className="text-3xl font-bold mb-8 text-primary">Подписание документов</h1>
+                <div className="container mx-auto max-w-6xl">
+                    <h1 className="text-3xl font-bold mb-8 text-primary">Договоры</h1>
 
-                    {/* Upload Form - Only for Organization and Superadmin */}
-                    {(user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN') && (
+                    {/* Upload Form — org only */}
+                    {isOrg && (
                         <div className="bg-card p-8 rounded-2xl border border-border shadow-sm mb-8">
-                            <h2 className="text-xl font-semibold mb-6 text-foreground">Загрузить документ</h2>
+                            <h2 className="text-xl font-semibold mb-6">Загрузить договор</h2>
                             <form onSubmit={handleUpload} className="flex gap-4 items-end">
                                 <div className="flex-1">
-                                    <label className="block text-sm font-medium text-muted-foreground mb-2">
-                                        Выберите файл
-                                    </label>
+                                    <label className="block text-sm font-medium text-muted-foreground mb-2">Файл (Word / PDF)</label>
                                     <input
                                         type="file"
+                                        accept=".docx,.pdf,.doc"
                                         onChange={e => setFile(e.target.files?.[0] || null)}
-                                        className="block w-full text-sm text-foreground 
-                                        file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 
-                                        file:text-sm file:font-semibold file:bg-secondary 
-                                        file:text-secondary-foreground hover:file:bg-secondary/80
-                                        border border-border rounded-xl cursor-pointer bg-input-background"
+                                        className="block w-full text-sm text-foreground file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-secondary file:text-secondary-foreground hover:file:bg-secondary/80 border border-border rounded-xl cursor-pointer bg-input-background"
                                     />
                                 </div>
-                                <Button disabled={!file || loading} type="submit" className="h-11 px-6 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground">
+                                <Button disabled={!file || loading} type="submit" className="h-11 px-6 rounded-xl">
                                     {loading ? 'Загрузка...' : 'Загрузить'}
                                 </Button>
                             </form>
-                            {error && <div className="text-destructive mt-3 text-sm font-medium">{error}</div>}
+                            {error && <div className="text-destructive mt-3 text-sm">{error}</div>}
                         </div>
                     )}
 
-                    {/* Document List */}
+                    {/* Documents Table */}
                     <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
                         <table className="min-w-full divide-y divide-border">
                             <thead className="bg-muted/50">
                                 <tr>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Название</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Дата</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Подпись орг.</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Подпись клиента</th>
-                                    <th className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Действия</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Название</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Дата</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Подпись орг.</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Подписали клиенты</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Статус</th>
+                                    <th className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase">Действия</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border bg-card">
                                 {documents.map(doc => (
-                                    <tr key={doc.id} className="hover:bg-muted/20 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="max-w-md break-words whitespace-normal">
+                                    <React.Fragment key={doc.id}>
+                                        <tr className="hover:bg-muted/20 transition-colors">
+                                            {/* Title */}
+                                            <td className="px-6 py-4">
                                                 <a
                                                     href={doc.file.startsWith('http') ? doc.file : `${API_BASE}${doc.file}`}
-                                                    target="_blank"
-                                                    rel="noreferrer"
+                                                    target="_blank" rel="noreferrer"
                                                     className="text-primary hover:underline font-bold"
                                                 >
                                                     {doc.title}
                                                 </a>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
-                                            {new Date(doc.created_at).toLocaleDateString()}
-                                        </td>
-                                        {/* Org Signature */}
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {doc.org_signed_at ? (
-                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200" title={new Date(doc.org_signed_at).toLocaleString()}>
-                                                    ✓ {new Date(doc.org_signed_at).toLocaleDateString()}
-                                                </span>
-                                            ) : (
-                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
-                                                    Не подписан
-                                                </span>
-                                            )}
-                                        </td>
-                                        {/* Client Signature */}
-                                        <td className="px-6 py-4 whitespace-nowrap">
-                                            {doc.signed_at ? (
-                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-green-100 text-green-800 border border-green-200" title={new Date(doc.signed_at).toLocaleString()}>
-                                                    ✓ {new Date(doc.signed_at).toLocaleDateString()}
-                                                </span>
-                                            ) : (
-                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">
-                                                    Ожидает
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => handleSummarize(doc)}
-                                                    className="border-purple-300 text-purple-600 hover:bg-purple-50 rounded-lg"
+                                            </td>
+
+                                            {/* Date */}
+                                            <td className="px-6 py-4 text-sm text-muted-foreground whitespace-nowrap">
+                                                {new Date(doc.created_at).toLocaleDateString()}
+                                            </td>
+
+                                            {/* Org signature */}
+                                            <td className="px-6 py-4">
+                                                {doc.org_signed_at ? (
+                                                    <span className="flex items-center gap-1 text-xs font-semibold text-blue-700">
+                                                        <CheckCircle className="w-3.5 h-3.5" />
+                                                        {new Date(doc.org_signed_at).toLocaleDateString()}
+                                                    </span>
+                                                ) : (
+                                                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                        <Clock className="w-3.5 h-3.5" /> Нет
+                                                    </span>
+                                                )}
+                                            </td>
+
+                                            {/* Client signatures count */}
+                                            <td className="px-6 py-4">
+                                                <button
+                                                    onClick={() => setExpandedDocId(expandedDocId === doc.id ? null : doc.id)}
+                                                    className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
                                                 >
-                                                    🤖 AI Анализ
-                                                </Button>
-                                                {/* Org sign button — only for org users, only if not yet org-signed */}
-                                                {(user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN') && !doc.org_signed_at && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => handleOrgSign(doc)}
-                                                        disabled={loading}
-                                                        className="border-blue-500 text-blue-600 hover:bg-blue-50 rounded-lg"
-                                                    >
-                                                        Подписать (Орг)
-                                                    </Button>
-                                                )}
-                                                {doc.status !== 'SIGNED' && (
-                                                    <>
-                                                        <Button
-                                                            size="sm"
-                                                            onClick={() => handleSign(doc)}
-                                                            disabled={loading}
-                                                            className="bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg"
-                                                        >
-                                                            Подписать ЭЦП
-                                                        </Button>
+                                                    <Users className="w-4 h-4" />
+                                                    {doc.signature_count} чел.
+                                                </button>
+                                            </td>
 
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => handleEGovSign(doc)}
-                                                            className="border-blue-500 text-blue-600 hover:bg-blue-50 rounded-lg ml-2"
-                                                        >
-                                                            📱 eGov Mobile
-                                                        </Button>
-                                                    </>
-                                                )}
+                                            {/* Status */}
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${doc.status === 'CLOSED'
+                                                    ? 'bg-gray-100 text-gray-600 border border-gray-200'
+                                                    : 'bg-green-100 text-green-700 border border-green-200'}`}>
+                                                    {doc.status === 'CLOSED' ? 'Закрыт' : 'Активен'}
+                                                </span>
+                                            </td>
 
-                                                {doc.status === 'SIGNED' && (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() => handleVerify(doc)}
-                                                        className="border-primary text-primary hover:bg-primary/5 rounded-lg"
-                                                    >
+                                            {/* Actions */}
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-2 flex-wrap">
+                                                    {/* Client sign buttons */}
+                                                    {!isOrg && doc.status !== 'CLOSED' && (
+                                                        <>
+                                                            <Button size="sm" onClick={() => handleSign(doc)} disabled={loading} className="bg-primary text-primary-foreground">
+                                                                <Lock className="w-3 h-3 mr-1" /> ЭЦП
+                                                            </Button>
+                                                            <Button size="sm" variant="outline" onClick={() => handleEGovSign(doc)} className="border-blue-500 text-blue-600 hover:bg-blue-50">
+                                                                📱 eGov
+                                                            </Button>
+                                                        </>
+                                                    )}
+
+                                                    {/* Org buttons */}
+                                                    {isOrg && (
+                                                        <>
+                                                            {!doc.org_signed_at && (
+                                                                <Button size="sm" variant="outline" onClick={() => handleOrgSign(doc)} disabled={loading} className="border-blue-500 text-blue-600 hover:bg-blue-50">
+                                                                    Подписать
+                                                                </Button>
+                                                            )}
+                                                            {doc.uuid && doc.status !== 'CLOSED' && (
+                                                                <Button size="sm" variant="outline" onClick={() => handleCopyLink(doc.uuid!)} className="border-gray-300 text-gray-600 hover:bg-gray-50">
+                                                                    <Copy className="w-3 h-3 mr-1" /> Ссылка
+                                                                </Button>
+                                                            )}
+                                                            {doc.status !== 'CLOSED' && (
+                                                                <Button size="sm" variant="outline" onClick={() => handleClose(doc)} className="border-red-300 text-red-600 hover:bg-red-50">
+                                                                    Закрыть
+                                                                </Button>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                    <Button size="sm" variant="outline" onClick={() => handleVerify(doc)} className="border-primary text-primary hover:bg-primary/5">
                                                         Проверить
                                                     </Button>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        {/* Expanded signers list */}
+                                        {expandedDocId === doc.id && doc.signatures.length > 0 && (
+                                            <tr>
+                                                <td colSpan={6} className="px-6 py-4 bg-blue-50">
+                                                    <p className="text-xs font-semibold text-blue-700 mb-2 uppercase tracking-wider">Подписавшие клиенты</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {doc.signatures.map(sig => (
+                                                            <div key={sig.id} className="flex items-center gap-2 bg-white border border-blue-200 rounded-lg px-3 py-1.5 text-sm">
+                                                                <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                                                <div>
+                                                                    <span className="font-medium">{sig.client_name}</span>
+                                                                    {sig.client_email && <span className="text-gray-500 ml-1">({sig.client_email})</span>}
+                                                                    <span className="text-gray-400 ml-2 text-xs">{new Date(sig.signed_at).toLocaleString()}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        {expandedDocId === doc.id && doc.signatures.length === 0 && (
+                                            <tr>
+                                                <td colSpan={6} className="px-6 py-4 bg-gray-50 text-sm text-gray-500 italic">
+                                                    Пока никто из клиентов не подписал этот договор.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
                                 ))}
                                 {documents.length === 0 && (
                                     <tr>
-                                        <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                            Нет загруженных документов
+                                        <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
+                                            Нет договоров.
                                         </td>
                                     </tr>
                                 )}
@@ -476,80 +392,29 @@ export function DocumentSign() {
             <Footer />
             <Whatsapp />
 
-            {/* AI Summary Modal */}
-            <AISummaryModal
-                isOpen={summaryModalOpen}
-                onClose={() => setSummaryModalOpen(false)}
-                loading={summaryLoading}
-                error={summaryError}
-                summary={currentSummary}
-                documentTitle={summaryDocTitle}
-            />
+            <AIChatWidget />
 
             {/* eGov QR Modal */}
             {egovModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative animate-in fade-in zoom-in duration-200">
-                        <button
-                            onClick={() => setEgovModalOpen(false)}
-                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-                        >
-                            ✕
-                        </button>
-
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative">
+                        <button onClick={() => setEgovModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">✕</button>
                         <div className="text-center">
-                            <h3 className="text-xl font-bold mb-2 text-gray-900">Подписание через eGov Mobile</h3>
-                            <p className="text-gray-500 text-sm mb-6">
-                                Откройте приложение eGov Mobile, выберите "eGov QR" и отсканируйте код.
-                            </p>
-
+                            <h3 className="text-xl font-bold mb-2">Подписание через eGov Mobile</h3>
+                            <p className="text-gray-500 text-sm mb-6">Откройте eGov Mobile и отсканируйте QR код.</p>
                             <div className="flex justify-center mb-6">
-                                {egovStatus === 'LOADING' && (
-                                    <div className="h-48 w-48 flex items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                                    </div>
-                                )}
-
-                                {egovStatus === 'WAITING' && egovSignUrl && (
-                                    <div className="p-4 bg-white rounded-xl border-2 border-gray-100 shadow-sm">
-                                        <QRCodeSVG value={egovSignUrl} size={180} />
-                                    </div>
-                                )}
-
-                                {egovStatus === 'SIGNED' && (
-                                    <div className="h-48 w-48 flex flex-col items-center justify-center bg-green-50 rounded-xl">
-                                        <div className="text-4xl mb-2">✅</div>
-                                        <div className="text-green-700 font-medium">Подписано!</div>
-                                    </div>
-                                )}
-
-                                {egovStatus === 'ERROR' && (
-                                    <div className="h-48 w-48 flex flex-col items-center justify-center bg-red-50 rounded-xl">
-                                        <div className="text-red-500 font-medium">Ошибка</div>
-                                    </div>
-                                )}
+                                {egovStatus === 'LOADING' && <div className="h-48 w-48 flex items-center justify-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}
+                                {egovStatus === 'WAITING' && egovSignUrl && <div className="p-4 bg-white rounded-xl border-2 border-gray-100 shadow-sm"><QRCodeSVG value={egovSignUrl} size={180} /></div>}
+                                {egovStatus === 'SIGNED' && <div className="h-48 w-48 flex flex-col items-center justify-center bg-green-50 rounded-xl"><div className="text-4xl mb-2">✅</div><div className="text-green-700 font-medium">Подписано!</div></div>}
+                                {egovStatus === 'ERROR' && <div className="h-48 w-48 flex flex-col items-center justify-center bg-red-50 rounded-xl"><div className="text-red-500 font-medium">Ошибка</div></div>}
                             </div>
-
-                            {/* Dev Mock Button */}
                             {import.meta.env.DEV && egovStatus === 'WAITING' && (
-                                <button
-                                    onClick={handleMockConfirm}
-                                    className="mb-4 px-4 py-2 bg-gray-100 text-gray-600 rounded text-xs hover:bg-gray-200"
-                                >
-                                    [DEV] Simulate Mobile Scan
-                                </button>
+                                <button onClick={handleMockConfirm} className="mb-4 px-4 py-2 bg-gray-100 text-gray-600 rounded text-xs hover:bg-gray-200">[DEV] Simulate Scan</button>
                             )}
-
-                            <div className="text-xs text-gray-400">
-                                Используйте ЭЦП, привязанный к вашему аккаунту.
-                            </div>
                         </div>
                     </div>
                 </div>
             )}
-
-
-
         </div>
     );
 }

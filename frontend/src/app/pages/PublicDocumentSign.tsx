@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import NCALayerService from '../lib/ncalayer';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
-import { AISummaryModal } from '../components/AISummaryModal';
+import { AIChatWidget } from '../components/AIChatWidget';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 
@@ -13,9 +13,11 @@ interface Document {
     id: number;
     title: string;
     file: string;
-    status: 'DRAFT' | 'SIGNED';
+    status: 'DRAFT' | 'CLOSED';
     created_at: string;
     uuid: string;
+    signature_count: number;
+    org_signed_at?: string;
 }
 
 export function PublicDocumentSign() {
@@ -26,14 +28,6 @@ export function PublicDocumentSign() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // AI Summary state
-    const [summaryModalOpen, setSummaryModalOpen] = useState(false);
-    const [summaryLoading, setSummaryLoading] = useState(false);
-    const [summaryError, setSummaryError] = useState<string | null>(null);
-    const [currentSummary, setCurrentSummary] = useState<{
-        key_points: string[];
-        suspicious_clauses: string[];
-    } | null>(null);
 
     useEffect(() => {
         if (uuid) {
@@ -88,7 +82,7 @@ export function PublicDocumentSign() {
                     const signRes = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/sign/`, {
                         method: 'POST',
                         headers: {
-                            'Authorization': `Token ${token}`,
+                            'Authorization': `Bearer ${token}`,
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
@@ -98,8 +92,7 @@ export function PublicDocumentSign() {
                     });
 
                     if (signRes.ok) {
-                        alert('Document signed successfully!');
-                        // Reload or redirect
+                        alert('Документ успешно подписан!');
                         fetchDocument();
                     } else {
                         const err = await signRes.json();
@@ -117,31 +110,6 @@ export function PublicDocumentSign() {
         }
     };
 
-    const handleSummarize = async () => {
-        if (!document) return;
-        setSummaryModalOpen(true);
-        setSummaryLoading(true);
-        setSummaryError(null);
-        setCurrentSummary(null);
-
-        try {
-            const res = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/summarize/`);
-            const data = await res.json();
-            if (res.ok) {
-                setCurrentSummary({
-                    key_points: data.key_points || [],
-                    suspicious_clauses: data.suspicious_clauses || []
-                });
-            } else {
-                setSummaryError(data.detail || 'Ошибка анализа документа');
-            }
-        } catch (e) {
-            console.error(e);
-            setSummaryError('Ошибка сети при анализе документа');
-        } finally {
-            setSummaryLoading(false);
-        }
-    };
 
     if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
     if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
@@ -158,9 +126,8 @@ export function PublicDocumentSign() {
                                 <h1 className="text-2xl font-bold text-gray-900">{document.title}</h1>
                                 <p className="text-gray-500 text-sm mt-1">Shared with you for signature</p>
                             </div>
-                            <div className={`px-4 py-1.5 rounded-full text-sm font-semibold ${document.status === 'SIGNED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                }`}>
-                                {document.status === 'SIGNED' ? 'Signed' : 'Pending Signature'}
+                                <div className={`px-4 py-1.5 rounded-full text-sm font-semibold ${document.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                {document.status === 'CLOSED' ? 'Закрыт' : `Активен · ${document.signature_count} подписей`}
                             </div>
                         </div>
 
@@ -169,35 +136,29 @@ export function PublicDocumentSign() {
                             <a href={document.file} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-medium text-lg mb-4">
                                 📄 Open Document PDF
                             </a>
-                            <p className="text-gray-500 text-sm mb-4">Please review the document before signing.</p>
-
-                            {/* AI Summary Button */}
-                            <Button
-                                onClick={handleSummarize}
-                                variant="outline"
-                                className="border-purple-300 text-purple-600 hover:bg-purple-50 rounded-lg"
-                            >
-                                🤖 AI Анализ документа
-                            </Button>
+                            <p className="text-gray-500 text-sm">Please review the document before signing.</p>
                         </div>
 
                         {/* Actions */}
+                        {/* Org signature badge */}
+                        {document.org_signed_at && (
+                            <div className="mb-4 flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2">
+                                ✓ Организация подписала: {new Date(document.org_signed_at).toLocaleString()}
+                            </div>
+                        )}
+
                         <div className="flex justify-end gap-4">
-                            {document.status !== 'SIGNED' ? (
+                            {document.status !== 'CLOSED' ? (
                                 <Button
                                     onClick={handleSign}
                                     disabled={loading}
                                     className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl shadow-lg shadow-blue-600/20"
                                 >
-                                    Sign with NCALayer
+                                    Подписать через NCALayer
                                 </Button>
                             ) : (
-                                <Button
-                                    variant="outline"
-                                    className="text-green-600 border-green-200 bg-green-50"
-                                    disabled
-                                >
-                                    ✓ Document Signed
+                                <Button variant="outline" className="text-gray-600 border-gray-200 bg-gray-50" disabled>
+                                    Документ закрыт
                                 </Button>
                             )}
                         </div>
@@ -206,15 +167,7 @@ export function PublicDocumentSign() {
             </main>
             <Footer />
 
-            {/* AI Summary Modal */}
-            <AISummaryModal
-                isOpen={summaryModalOpen}
-                onClose={() => setSummaryModalOpen(false)}
-                loading={summaryLoading}
-                error={summaryError}
-                summary={currentSummary}
-                documentTitle={document?.title}
-            />
+            <AIChatWidget />
         </div>
     );
 }

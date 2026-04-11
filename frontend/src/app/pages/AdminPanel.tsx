@@ -22,7 +22,7 @@ export function AdminPanel() {
     const fetchUsers = async () => {
         try {
             const res = await fetch(`${API_BASE}/api/users/`, {
-                headers: { Authorization: `Token ${token}` },
+                headers: { Authorization: `Bearer ${token}` },
             });
             if (res.ok) {
                 const data = await res.json();

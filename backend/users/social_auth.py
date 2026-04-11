@@ -14,11 +14,14 @@ import json
 @permission_classes([AllowAny])
 def google_login(request):
     """Redirect user to Google OAuth"""
+    client_id = settings.GOOGLE_CLIENT_ID
+    if not client_id:
+        return Response({'error': 'GOOGLE_CLIENT_ID is not configured on the server. Set it in Render environment variables.'}, status=500)
+
     redirect_uri = 'https://onecontract.onrender.com/accounts/google/login/callback/'
-    
     google_auth_url = (
         f'https://accounts.google.com/o/oauth2/v2/auth?'
-        f'client_id={settings.GOOGLE_CLIENT_ID}&'
+        f'client_id={client_id}&'
         f'redirect_uri={redirect_uri}&'
         f'response_type=code&'
         f'scope=openid%20profile%20email'

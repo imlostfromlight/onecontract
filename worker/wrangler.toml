@@ -1,0 +1,22 @@
+name = "onecontract-api"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "onecontract"
+database_id = "8330cbe4-e846-41c4-b94e-b8949bbf4884"
+
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "onecontract-files"
+
+[vars]
+FRONTEND_URL = "https://onecontract.pages.dev"
+
+# Secrets (set via: wrangler secret put SECRET_NAME)
+# JWT_SECRET
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# GROQ_API_KEY
