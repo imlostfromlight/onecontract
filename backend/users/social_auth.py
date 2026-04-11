@@ -14,7 +14,7 @@ import json
 @permission_classes([AllowAny])
 def google_login(request):
     """Redirect user to Google OAuth"""
-    redirect_uri = 'http://localhost:8000/accounts/google/login/callback/'
+    redirect_uri = 'https://onecontract.onrender.com/accounts/google/login/callback/'
     
     google_auth_url = (
         f'https://accounts.google.com/o/oauth2/v2/auth?'
@@ -30,7 +30,7 @@ def google_login(request):
 @permission_classes([AllowAny])
 def facebook_login(request):
     """Redirect user to Facebook OAuth"""
-    redirect_uri = 'http://localhost:8000/api/auth/facebook/callback/'
+    redirect_uri = 'https://onecontract.onrender.com/api/auth/facebook/callback/'
     
     facebook_auth_url = (
         f'https://www.facebook.com/v18.0/dialog/oauth?'
@@ -78,7 +78,7 @@ def google_callback(request):
             'code': code,
             'client_id': settings.GOOGLE_CLIENT_ID,
             'client_secret': settings.GOOGLE_CLIENT_SECRET,
-            'redirect_uri': 'http://localhost:8000/accounts/google/login/callback/',
+            'redirect_uri': 'https://onecontract.onrender.com/accounts/google/login/callback/',
             'grant_type': 'authorization_code',
         }
         
@@ -112,7 +112,7 @@ def google_callback(request):
         token, _ = Token.objects.get_or_create(user=user)
         
         # Redirect to frontend with token
-        return redirect(f'http://localhost:5173/auth/callback?token={token.key}')
+        return redirect(f'https://onecontract.pages.dev/auth/callback?token={token.key}')
     
     except Exception as e:
         return Response({'error': str(e)}, status=500)
@@ -134,7 +134,7 @@ def facebook_callback(request):
         data = {
             'client_id': settings.FACEBOOK_APP_ID,
             'client_secret': settings.FACEBOOK_APP_SECRET,
-            'redirect_uri': 'http://localhost:8000/api/auth/facebook/callback/',
+            'redirect_uri': 'https://onecontract.onrender.com/api/auth/facebook/callback/',
             'code': code,
         }
         
@@ -169,7 +169,7 @@ def facebook_callback(request):
         token, _ = Token.objects.get_or_create(user=user)
         
         # Redirect to frontend with token
-        return redirect(f'http://localhost:5173/auth/callback?token={token.key}')
+        return redirect(f'https://onecontract.pages.dev/auth/callback?token={token.key}')
     
     except Exception as e:
         return Response({'error': str(e)}, status=500)

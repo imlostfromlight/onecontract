@@ -11,6 +11,7 @@ import { Mail, MessageCircle, Lock, QrCode } from 'lucide-react';
 import NCALayerService from '../lib/ncalayer';
 
 export default function Login() {
+  const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
   const { login, setAuth } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -90,27 +91,27 @@ export default function Login() {
 
                   <div className="mt-6 grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/google/'}
+                      onClick={() => window.location.href = `${API_BASE}/api/auth/google/`}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <Mail className="w-5 h-5" />
                       <span className="text-sm font-medium">Google</span>
                     </button>
                     <button
-                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/facebook/'}
+                      onClick={() => window.location.href = `${API_BASE}/api/auth/facebook/`}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <span className="text-sm font-medium">Facebook</span>
                     </button>
                     <button
-                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/telegram/'}
+                      onClick={() => window.location.href = `${API_BASE}/api/auth/telegram/`}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <MessageCircle className="w-5 h-5" />
                       <span className="text-sm font-medium">Telegram</span>
                     </button>
                     <button
-                      onClick={() => window.location.href = 'https://onecontract.onrender.com/api/auth/whatsapp/'}
+                      onClick={() => window.location.href = `${API_BASE}/api/auth/whatsapp/`}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
                       <MessageCircle className="w-5 h-5" />

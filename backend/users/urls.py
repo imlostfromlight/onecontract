@@ -16,6 +16,9 @@ urlpatterns = [
     path('auth/egov/qr/confirm/', views.egov_qr_mock_confirm, name='egov_qr_mock_confirm'),
 
     # Social auth login
+    path('auth/google/', social_auth.google_login, name='google_login'),
+    path('auth/facebook/', social_auth.facebook_login, name='facebook_login'),
+    path('auth/facebook/callback/', social_auth.facebook_callback, name='facebook_callback'),
     path('auth/telegram/', social_auth.telegram_login, name='telegram_login'),
     path('auth/whatsapp/', social_auth.whatsapp_login, name='whatsapp_login'),
 ]
