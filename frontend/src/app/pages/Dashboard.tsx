@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { DashboardLayout } from '../layouts/DashboardLayout';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
-import { Plus, FileText, CheckCircle, Clock, Copy, ExternalLink, LogOut } from 'lucide-react';
+import { Plus, FileText, CheckCircle, Clock, Copy, ExternalLink, LogOut, LayoutTemplate } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
@@ -173,10 +173,15 @@ export function Dashboard() {
                     {(user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN') && (
                         <div className="bg-gradient-to-br from-blue-900 to-indigo-900 rounded-xl p-6 text-white shadow-lg mb-6">
                             <h3 className="text-xl font-bold mb-2">Create New Contract</h3>
-                            <p className="text-blue-100 text-sm mb-6">Upload a document and send it for signature.</p>
+                            <p className="text-blue-100 text-sm mb-4">Upload a document and send it for signature.</p>
                             <Link to="/documents">
-                                <Button className="w-full bg-white text-blue-900 hover:bg-blue-50">
+                                <Button className="w-full bg-white text-blue-900 hover:bg-blue-50 mb-3">
                                     <Plus className="w-4 h-4 mr-2" /> Upload Contract
+                                </Button>
+                            </Link>
+                            <Link to="/templates">
+                                <Button className="w-full bg-white/20 text-white hover:bg-white/30 border border-white/30">
+                                    <LayoutTemplate className="w-4 h-4 mr-2" /> Manage Templates
                                 </Button>
                             </Link>
                         </div>

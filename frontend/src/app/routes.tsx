@@ -7,6 +7,7 @@ import { DocumentSign } from './pages/DocumentSign';
 import { Dashboard } from './pages/Dashboard';
 import { PublicDocumentSign } from './pages/PublicDocumentSign';
 import { AdminPanel } from './pages/AdminPanel';
+import { Templates } from './pages/Templates';
 
 export function AppRoutes() {
   return (
@@ -17,6 +18,7 @@ export function AppRoutes() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/documents" element={<DocumentSign />} />
+      <Route path="/templates" element={<Templates />} />
       <Route path="/admin" element={<AdminPanel />} />
       <Route path="/sign/:uuid" element={<PublicDocumentSign />} />
     </Routes>

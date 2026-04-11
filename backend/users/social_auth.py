@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from django.shortcuts import redirect
 from django.conf import settings
 from rest_framework.authtoken.models import Token
-from django.contrib.auth.models import User
+from users.models import User
 import requests
 import json
 

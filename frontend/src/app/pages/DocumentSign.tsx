@@ -17,6 +17,9 @@ interface Document {
     status: 'DRAFT' | 'SIGNED';
     created_at: string;
     signed_at?: string;
+    org_signed_at?: string;
+    org_signature?: string;
+    signature?: string;
 }
 
 export function DocumentSign() {
@@ -238,6 +241,33 @@ export function DocumentSign() {
         }
     };
 
+    const handleOrgSign = async (doc: Document) => {
+        if (!token) return;
+        setLoading(true);
+        setError(null);
+        try {
+            const res = await fetch(`${API_BASE}/api/documents/${doc.id}/org_sign/`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Token ${token}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({}),
+            });
+            if (res.ok) {
+                const updatedDoc = await res.json();
+                setDocuments(docs => docs.map(d => d.id === updatedDoc.id ? updatedDoc : d));
+            } else {
+                const err = await res.json();
+                setError(err.detail || 'Ошибка при подписании');
+            }
+        } catch (e: any) {
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleVerify = async (doc: Document) => {
         try {
             const res = await fetch(`${API_BASE}/api/documents/${doc.id}/verify/`, {
@@ -325,7 +355,8 @@ export function DocumentSign() {
                                 <tr>
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Название</th>
                                     <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Дата</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Статус</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Подпись орг.</th>
+                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Подпись клиента</th>
                                     <th className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wider">Действия</th>
                                 </tr>
                             </thead>
@@ -347,13 +378,29 @@ export function DocumentSign() {
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                                             {new Date(doc.created_at).toLocaleDateString()}
                                         </td>
+                                        {/* Org Signature */}
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${doc.status === 'SIGNED'
-                                                ? 'bg-green-100 text-green-800 border border-green-200'
-                                                : 'bg-yellow-100 text-yellow-800 border border-yellow-200'
-                                                }`}>
-                                                {doc.status === 'SIGNED' ? 'Подписан' : 'Черновик'}
-                                            </span>
+                                            {doc.org_signed_at ? (
+                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-200" title={new Date(doc.org_signed_at).toLocaleString()}>
+                                                    ✓ {new Date(doc.org_signed_at).toLocaleDateString()}
+                                                </span>
+                                            ) : (
+                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-gray-100 text-gray-500 border border-gray-200">
+                                                    Не подписан
+                                                </span>
+                                            )}
+                                        </td>
+                                        {/* Client Signature */}
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            {doc.signed_at ? (
+                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-green-100 text-green-800 border border-green-200" title={new Date(doc.signed_at).toLocaleString()}>
+                                                    ✓ {new Date(doc.signed_at).toLocaleDateString()}
+                                                </span>
+                                            ) : (
+                                                <span className="px-3 py-1 inline-flex text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-200">
+                                                    Ожидает
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                             <div className="flex items-center justify-end gap-2">
@@ -365,6 +412,18 @@ export function DocumentSign() {
                                                 >
                                                     🤖 AI Анализ
                                                 </Button>
+                                                {/* Org sign button — only for org users, only if not yet org-signed */}
+                                                {(user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN') && !doc.org_signed_at && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleOrgSign(doc)}
+                                                        disabled={loading}
+                                                        className="border-blue-500 text-blue-600 hover:bg-blue-50 rounded-lg"
+                                                    >
+                                                        Подписать (Орг)
+                                                    </Button>
+                                                )}
                                                 {doc.status !== 'SIGNED' && (
                                                     <>
                                                         <Button
@@ -388,16 +447,14 @@ export function DocumentSign() {
                                                 )}
 
                                                 {doc.status === 'SIGNED' && (
-                                                    <>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() => handleVerify(doc)}
-                                                            className="border-primary text-primary hover:bg-primary/5 rounded-lg"
-                                                        >
-                                                            Проверить
-                                                        </Button>
-                                                    </>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleVerify(doc)}
+                                                        className="border-primary text-primary hover:bg-primary/5 rounded-lg"
+                                                    >
+                                                        Проверить
+                                                    </Button>
                                                 )}
                                             </div>
                                         </td>
