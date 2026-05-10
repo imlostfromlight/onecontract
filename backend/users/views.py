@@ -20,14 +20,20 @@ logger = logging.getLogger(__name__)
 @api_view(['POST'])
 def register(request):
     """Register a new user"""
-    serializer = RegisterSerializer(data=request.data)
+    data = request.data.copy()
+    if not data.get('username'):
+        base = data.get('email', '').split('@')[0] or 'user'
+        username = base
+        suffix = 1
+        while User.objects.filter(username=username).exists():
+            username = f'{base}{suffix}'
+            suffix += 1
+        data['username'] = username
+    serializer = RegisterSerializer(data=data)
     if serializer.is_valid():
         user = serializer.save()
-        token, created = Token.objects.get_or_create(user=user)
-        return Response({
-            'token': token.key,
-            'user': UserSerializer(user).data
-        }, status=status.HTTP_201_CREATED)
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({'token': token.key, 'user': UserSerializer(user).data}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
@@ -184,6 +190,37 @@ def get_user_info(request):
     """Get current authenticated user info"""
     serializer = UserSerializer(request.user)
     return Response(serializer.data)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def fast_login(request):
+    """Dev-only: instantly log in as a test user by role."""
+    role = request.data.get('role', 'CLIENT')
+    role_emails = {
+        'ORGANIZATION': ('org@test.com', 'Тест', 'Организация'),
+        'ADMIN': ('admin@test.com', 'Тест', 'Админ'),
+        'CLIENT': ('client@test.com', 'Тест', 'Клиент'),
+        'SUPERADMIN': ('superadmin@test.com', 'Тест', 'Суперадмин'),
+    }
+    if role not in role_emails:
+        return Response({'detail': 'Unknown role'}, status=status.HTTP_400_BAD_REQUEST)
+    email, first_name, last_name = role_emails[role]
+    base = email.split('@')[0]
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        username = base
+        suffix = 1
+        while User.objects.filter(username=username).exists():
+            username = f'{base}{suffix}'
+            suffix += 1
+        user = User.objects.create_user(
+            username=username, email=email,
+            first_name=first_name, last_name=last_name, role=role, password='test1234',
+        )
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({'token': token.key, 'user': UserSerializer(user).data})
 
 
 # --- eGov Mobile QR Authentication ---

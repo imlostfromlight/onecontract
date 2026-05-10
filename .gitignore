@@ -1,4 +1,12 @@
 .env
 dotenv.local
-.env.local  
+.env.local
 .claudeignore
+worker/.dev.vars
+.claude
+claude
+worker/claude
+worker/.claude
+worker/.claudeignore
+worker/.env
+worker/.env.local

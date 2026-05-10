@@ -28,7 +28,7 @@ export default function Login() {
       await login({ email, password });
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err?.body?.detail || 'Login failed');
+      setError(err?.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -144,35 +144,44 @@ export default function Login() {
                   </Link>
                 </p>
 
-                {/* Dev Tools: Quick Login */}
-                {process.env.NODE_ENV === 'development' && (
-                  <div className="mt-8 pt-6 border-t border-dashed border-gray-300">
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-3 text-center">Dev Tools: Quick Login</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Button
-                        variant="outline"
-                        className="text-xs h-8"
-                        onClick={() => {
-                          setEmail('org@example.com');
-                          setPassword('password123');
-                          // We can also auto-submit if we want, but filling is safer
+                {/* Quick login for demo/testing */}
+                <div className="mt-6 pt-6 border-t border-dashed border-gray-300">
+                  <p className="text-xs font-semibold text-gray-400 uppercase mb-3 text-center tracking-wider">Быстрый вход для теста</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Организация', email: 'org@test.com', role: 'ORGANIZATION', color: 'text-blue-600 border-blue-300 hover:bg-blue-50' },
+                      { label: 'Админ', email: 'admin@test.com', role: 'ADMIN', color: 'text-purple-600 border-purple-300 hover:bg-purple-50' },
+                      { label: 'Клиент', email: 'client@test.com', role: 'CLIENT', color: 'text-green-600 border-green-300 hover:bg-green-50' },
+                    ].map(({ label, email: testEmail, role, color }) => (
+                      <button
+                        key={testEmail}
+                        type="button"
+                        className={`text-xs py-1.5 px-2 border rounded-lg font-medium transition-colors ${color}`}
+                        onClick={async () => {
+                          setError(null);
+                          setLoading(true);
+                          try {
+                            const r = await fetch(`${API_BASE}/api/auth/fast-login/`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ role }),
+                            });
+                            const data = await r.json();
+                            if (!r.ok) throw new Error(data.detail || 'Ошибка');
+                            setAuth({ token: data.token, user: data.user });
+                            navigate('/dashboard');
+                          } catch (err: any) {
+                            setError(err?.message || 'Ошибка входа');
+                          } finally {
+                            setLoading(false);
+                          }
                         }}
                       >
-                        Fill Org
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="text-xs h-8"
-                        onClick={() => {
-                          setEmail('client@example.com');
-                          setPassword('password123');
-                        }}
-                      >
-                        Fill Client
-                      </Button>
-                    </div>
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                )}
+                </div>
               </>
             ) : loginMode === 'ecp' ? (
               <>

@@ -18,6 +18,7 @@ function userResponse(user: any) {
     first_name: user.first_name,
     last_name: user.last_name,
     role: user.role,
+    organization_id: user.organization_id || null,
     is_ecp_verified: !!user.is_ecp_verified,
   };
 }
@@ -31,8 +32,17 @@ auth.post('/register/', async (c) => {
   if (!email || !password) return c.json({ detail: 'email and password required' }, 400);
   if (password !== password2) return c.json({ detail: 'Passwords do not match' }, 400);
 
-  const allowed = ['CLIENT', 'ORGANIZATION'];
+  const allowed = ['CLIENT', 'ORGANIZATION', 'MANAGER'];
   const finalRole = allowed.includes(role) ? role : 'CLIENT';
+
+  const organizationId = body.organization_id || null;
+  if (finalRole === 'MANAGER' && !organizationId)
+    return c.json({ detail: 'organization_id is required for MANAGER role' }, 400);
+  if (organizationId) {
+    const org = await c.env.DB.prepare('SELECT id FROM users WHERE id = ? AND role = ?')
+      .bind(organizationId, 'ORGANIZATION').first();
+    if (!org) return c.json({ detail: 'Organization not found' }, 400);
+  }
 
   const existing = await c.env.DB.prepare('SELECT id FROM users WHERE email = ? OR username = ?')
     .bind(email, username).first();
@@ -42,8 +52,8 @@ auth.post('/register/', async (c) => {
   const password_hash = await hashPassword(password);
 
   await c.env.DB.prepare(
-    'INSERT INTO users (id, username, email, first_name, last_name, password_hash, role) VALUES (?,?,?,?,?,?,?)'
-  ).bind(id, username, email, first_name, last_name, password_hash, finalRole).run();
+    'INSERT INTO users (id, username, email, first_name, last_name, password_hash, role, organization_id) VALUES (?,?,?,?,?,?,?,?)'
+  ).bind(id, username, email, first_name, last_name, password_hash, finalRole, organizationId).run();
 
   const user = await c.env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<any>();
   const token = await signJWT({ sub: id, role: finalRole }, c.env.JWT_SECRET);

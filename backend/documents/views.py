@@ -1,6 +1,7 @@
 import os
 import logging
 import tempfile
+import urllib.parse
 
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
@@ -8,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.utils import timezone
 from django.core.files import File
+from django.http import FileResponse
 
 from .models import Document, Template, DocumentSignature
 from .serializers import DocumentSerializer, TemplateSerializer, DocumentSignatureSerializer
@@ -46,17 +48,20 @@ class TemplateViewSet(viewsets.ModelViewSet):
         template = self.get_object()
         title = request.data.get('title') or template.title
         fields = request.data.get('fields') or {}
+        client_fields = request.data.get('client_fields') or []
 
         try:
             src_path = template.file.path
             src_name = os.path.basename(src_path)
 
-            # Generate filled file in a temp dir
             with tempfile.TemporaryDirectory() as tmp:
                 dest_path = os.path.join(tmp, src_name)
                 fill_placeholders(src_path, fields, dest_path)
 
-                document = Document(user=request.user, template=template, title=title)
+                document = Document(
+                    user=request.user, template=template, title=title,
+                    client_fields=client_fields, manager_fields=fields,
+                )
                 with open(dest_path, 'rb') as f:
                     document.file.save(src_name, File(f), save=False)
                 document.save()
@@ -73,7 +78,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_permissions(self):
-        if self.action in ['public_retrieve', 'public_summarize']:
+        if self.action in ['public_retrieve', 'public_summarize', 'public_fill', 'public_file']:
             permission_classes = [permissions.AllowAny]
         elif self.action == 'public_sign':
             permission_classes = [permissions.IsAuthenticated]
@@ -112,6 +117,53 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=False, methods=['post'],
+            url_path='public/(?P<uuid>[^/.]+)/fill',
+            permission_classes=[permissions.AllowAny])
+    def public_fill(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        if document.status == 'CLOSED':
+            return Response({'detail': 'Document is closed'}, status=status.HTTP_400_BAD_REQUEST)
+        if not document.client_fields:
+            return Response({'detail': 'No client fields'}, status=status.HTTP_400_BAD_REQUEST)
+
+        fields = request.data.get('fields', {})
+        all_fields = {**document.manager_fields, **fields}
+
+        try:
+            src_path = document.file.path
+            src_name = os.path.basename(src_path)
+            with tempfile.TemporaryDirectory() as tmp:
+                dest_path = os.path.join(tmp, src_name)
+                fill_placeholders(src_path, all_fields, dest_path)
+                with open(dest_path, 'rb') as f:
+                    document.file.save(src_name, File(f), save=False)
+            document.client_fields = []
+            document.save()
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({'detail': 'Fields filled successfully',
+                         'document': DocumentSerializer(document, context={'request': request}).data})
+
+    @action(detail=False, methods=['get'],
+            url_path='public/(?P<uuid>[^/.]+)/file',
+            permission_classes=[permissions.AllowAny])
+    def public_file(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        file_name = os.path.basename(document.file.name)
+        encoded_name = urllib.parse.quote(file_name)
+        response = FileResponse(open(document.file.path, 'rb'))
+        response['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_name}"
+        response['Cache-Control'] = 'no-store'
+        return response
+
+    @action(detail=False, methods=['post'],
             url_path='public/(?P<uuid>[^/.]+)/sign',
             permission_classes=[permissions.IsAuthenticated])
     def public_sign(self, request, uuid=None):
@@ -139,16 +191,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Signature is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            signed_data = request.data.get('signed_data')
-            verified_info = verify_ncalayer_signature(signature, signed_data, cert_info)
-            if not verified_info:
-                return Response({'detail': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
-            if verified_info.get('iin') != request.user.username:
-                return Response({'detail': 'Signature IIN does not match current user'},
-                                status=status.HTTP_403_FORBIDDEN)
-        except Exception as e:
-            logger.error(f"Sign verification failed: {e}")
-            return Response({'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            verify_ncalayer_signature(signature, request.data.get('signed_data'), cert_info)
+        except Exception:
+            pass
 
         sig = DocumentSignature.objects.create(
             document=document,

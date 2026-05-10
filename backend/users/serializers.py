@@ -23,6 +23,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     """Validate and create new user accounts"""
     password = serializers.CharField(write_only=True)
     password2 = serializers.CharField(write_only=True)
+    username = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
@@ -31,6 +32,8 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if data['password'] != data['password2']:
             raise serializers.ValidationError({'password': 'Пароли не совпадают'})
+        if not data.get('username'):
+            data['username'] = data['email'].split('@')[0]
         return data
 
     def create(self, validated_data):

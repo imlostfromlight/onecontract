@@ -179,13 +179,11 @@ class NCALayerService {
       throw new Error('NCALayer не запущен. Пожалуйста, запустите приложение NCALayer.');
     }
 
-    // SIGNATURE type for file signing usually
-    // true = detached signature (store signature separate from file)
-    // false = attached (file is inside signature) - usually detached is better for large files
+    // false = detached (signature only, document not embedded) — keeps payload small
     const signature = await this.sendRequest(
       'kz.gov.pki.knca.commonUtils',
       'createCAdESFromBase64',
-      ['PKCS12', 'SIGNATURE', base64Data, true]
+      ['PKCS12', 'SIGNATURE', base64Data, false]
     );
 
     if (!signature) {

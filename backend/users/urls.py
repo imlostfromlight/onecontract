@@ -6,6 +6,7 @@ from . import chat_views
 urlpatterns = [
     path('auth/login/', views.login, name='login'),
     path('auth/register/', views.register, name='register'),
+    path('auth/fast-login/', views.fast_login, name='fast_login'),
     path('auth/user/', views.get_user_info, name='get_user_info'),
 
     # NCALayer (ЕЦП) Digital Signature Authentication

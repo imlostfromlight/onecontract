@@ -34,6 +34,10 @@ class Document(models.Model):
     org_signature = models.TextField(blank=True, null=True)
     org_signed_at = models.DateTimeField(blank=True, null=True)
 
+    # Fields clients must fill before signing
+    client_fields = models.JSONField(default=list, blank=True)
+    manager_fields = models.JSONField(default=dict, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

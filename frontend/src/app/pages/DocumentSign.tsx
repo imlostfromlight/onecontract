@@ -7,7 +7,7 @@ import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { Whatsapp } from '../components/Whatsapp';
 import { AIChatWidget } from '../components/AIChatWidget';
-import { Users, CheckCircle, Clock, Copy, Lock } from 'lucide-react';
+import { Users, CheckCircle, Clock, Copy, Lock, Download, Share2 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 
@@ -22,7 +22,7 @@ interface Signature {
 interface Document {
     id: number;
     title: string;
-    file: string;
+    file_name: string;
     status: 'DRAFT' | 'CLOSED';
     created_at: string;
     uuid?: string;
@@ -106,6 +106,21 @@ export function DocumentSign() {
         alert('Ссылка скопирована!');
     };
 
+    const handleDownload = async (doc: Document) => {
+        if (!doc.uuid) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/documents/public/${doc.uuid}/b64/`);
+            if (!res.ok) { alert('Файл не найден'); return; }
+            const { data, name, mime } = await res.json();
+            const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: mime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = name; a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) { alert('Ошибка при скачивании'); }
+    };
+
     const handleOrgSign = async (doc: Document) => {
         if (!token) return;
         setLoading(true); setError(null);
@@ -143,7 +158,9 @@ export function DocumentSign() {
         if (!token) return;
         setLoading(true); setError(null);
         try {
-            const fileRes = await fetch(doc.file);
+            const fileRes = await fetch(`${API_BASE}/api/documents/${doc.id}/file/`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
             const blob = await fileRes.blob();
             const reader = new FileReader();
             reader.readAsDataURL(blob);
@@ -205,7 +222,7 @@ export function DocumentSign() {
     };
 
 
-    const isOrg = user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN';
+    const isOrg = user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN' || user?.role === 'MANAGER';
 
     return (
         <div className="flex flex-col min-h-screen bg-background text-foreground">
@@ -257,7 +274,7 @@ export function DocumentSign() {
                                             {/* Title */}
                                             <td className="px-6 py-4">
                                                 <a
-                                                    href={doc.file.startsWith('http') ? doc.file : `${API_BASE}${doc.file}`}
+                                                    href={`${API_BASE}/api/documents/public/${doc.uuid}/file/`}
                                                     target="_blank" rel="noreferrer"
                                                     className="text-primary hover:underline font-bold"
                                                 >
@@ -327,11 +344,6 @@ export function DocumentSign() {
                                                                     Подписать
                                                                 </Button>
                                                             )}
-                                                            {doc.uuid && doc.status !== 'CLOSED' && (
-                                                                <Button size="sm" variant="outline" onClick={() => handleCopyLink(doc.uuid!)} className="border-gray-300 text-gray-600 hover:bg-gray-50">
-                                                                    <Copy className="w-3 h-3 mr-1" /> Ссылка
-                                                                </Button>
-                                                            )}
                                                             {doc.status !== 'CLOSED' && (
                                                                 <Button size="sm" variant="outline" onClick={() => handleClose(doc)} className="border-red-300 text-red-600 hover:bg-red-50">
                                                                     Закрыть
@@ -340,6 +352,19 @@ export function DocumentSign() {
                                                         </>
                                                     )}
 
+                                                    {doc.uuid && (
+                                                        <button
+                                                            onClick={() => handleDownload(doc)}
+                                                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                                                        >
+                                                            <Download className="w-3 h-3" /> Скачать
+                                                        </button>
+                                                    )}
+                                                    {isOrg && doc.uuid && doc.status !== 'CLOSED' && (
+                                                        <Button size="sm" variant="outline" onClick={() => handleCopyLink(doc.uuid!)} className="border-blue-300 text-blue-600 hover:bg-blue-50">
+                                                            <Share2 className="w-3 h-3 mr-1" /> Поделиться
+                                                        </Button>
+                                                    )}
                                                     <Button size="sm" variant="outline" onClick={() => handleVerify(doc)} className="border-primary text-primary hover:bg-primary/5">
                                                         Проверить
                                                     </Button>

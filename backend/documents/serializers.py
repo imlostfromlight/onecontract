@@ -1,3 +1,4 @@
+import os
 from rest_framework import serializers
 from .models import Document, Template, DocumentSignature
 
@@ -40,18 +41,22 @@ class TemplateSerializer(serializers.ModelSerializer):
 class DocumentSerializer(serializers.ModelSerializer):
     signatures = DocumentSignatureSerializer(many=True, read_only=True)
     signature_count = serializers.SerializerMethodField()
+    file_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
         fields = [
-            'id', 'title', 'file', 'status', 'created_at', 'uuid', 'template',
-            'org_signature', 'org_signed_at',
+            'id', 'title', 'file', 'file_name', 'status', 'created_at', 'uuid', 'template',
+            'org_signature', 'org_signed_at', 'client_fields',
             'signatures', 'signature_count',
         ]
         read_only_fields = ['status', 'created_at', 'user', 'org_signature', 'org_signed_at', 'signatures']
 
     def get_signature_count(self, obj):
         return obj.signatures.count()
+
+    def get_file_name(self, obj):
+        return os.path.basename(obj.file.name) if obj.file else None
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user

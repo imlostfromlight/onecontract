@@ -14,7 +14,8 @@ export interface User {
   email: string;
   first_name: string;
   last_name: string;
-  role: 'SUPERADMIN' | 'ADMIN' | 'ORGANIZATION' | 'CLIENT';
+  role: 'SUPERADMIN' | 'ADMIN' | 'ORGANIZATION' | 'MANAGER' | 'CLIENT';
+  organization_id: string | null;
   is_ecp_verified: number;
   created_at: string;
 }
@@ -22,6 +23,7 @@ export interface User {
 export interface Document {
   id: number;
   user_id: string;
+  organization_id: string | null;
   template_id: number | null;
   uuid: string;
   title: string;
@@ -30,6 +32,8 @@ export interface Document {
   status: 'DRAFT' | 'CLOSED';
   org_signature: string | null;
   org_signed_at: string | null;
+  client_fields: string; // JSON array
+  manager_fields: string; // JSON object
   created_at: string;
 }
 
