@@ -38,5 +38,13 @@ class User(AbstractUser):
     ecp_verification_date = models.DateTimeField(null=True, blank=True,
                                                  help_text="Date of ECP verification date")
 
+    # Email verification
+    is_email_verified = models.BooleanField(default=False)
+    email_verify_token = models.CharField(max_length=64, blank=True)
+
+    # Password reset
+    password_reset_token = models.CharField(max_length=64, blank=True)
+    password_reset_expires = models.DateTimeField(null=True, blank=True)
+
     def __str__(self):
         return self.username

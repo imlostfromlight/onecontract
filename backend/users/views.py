@@ -1,16 +1,20 @@
 import requests
+import secrets
+from datetime import timedelta
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status, viewsets
 from django.contrib.auth.models import User as DjangoUser
 from django.contrib.auth import authenticate
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from .serializers import RegisterSerializer, LoginSerializer, UserSerializer, ECPSignatureSerializer
 from .models import User
 from .ncalayer_auth import verify_ncalayer_signature
 from .egov_mobile import EGovMobileAuth
 from .permissions import IsSuperAdmin, IsAdminUser, IsOrganization, IsClient, IsOrganizationOrClient
+from .email_service import send_verification_email, send_password_reset_email
 import core.settings as settings
 import logging
 
@@ -32,9 +36,63 @@ def register(request):
     serializer = RegisterSerializer(data=data)
     if serializer.is_valid():
         user = serializer.save()
+        # Send email verification
+        token_str = secrets.token_urlsafe(32)
+        user.email_verify_token = token_str
+        user.save(update_fields=['email_verify_token'])
+        send_verification_email(user, token_str)
         token, _ = Token.objects.get_or_create(user=user)
         return Response({'token': token.key, 'user': UserSerializer(user).data}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def verify_email(request, token):
+    try:
+        user = User.objects.get(email_verify_token=token)
+        user.is_email_verified = True
+        user.email_verify_token = ''
+        user.save(update_fields=['is_email_verified', 'email_verify_token'])
+        return Response({'detail': 'Email успешно подтверждён'})
+    except User.DoesNotExist:
+        return Response({'detail': 'Недействительная ссылка'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_request(request):
+    email = request.data.get('email', '').strip()
+    try:
+        user = User.objects.get(email=email)
+    except User.DoesNotExist:
+        return Response({'detail': 'Если такой email существует, письмо отправлено'})
+    token_str = secrets.token_urlsafe(32)
+    user.password_reset_token = token_str
+    user.password_reset_expires = timezone.now() + timedelta(hours=1)
+    user.save(update_fields=['password_reset_token', 'password_reset_expires'])
+    send_password_reset_email(user, token_str)
+    return Response({'detail': 'Если такой email существует, письмо отправлено'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def password_reset_confirm(request, token):
+    password = request.data.get('password', '')
+    if len(password) < 6:
+        return Response({'detail': 'Пароль слишком короткий (минимум 6 символов)'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        user = User.objects.get(
+            password_reset_token=token,
+            password_reset_expires__gt=timezone.now(),
+        )
+    except User.DoesNotExist:
+        return Response({'detail': 'Ссылка недействительна или истекла'}, status=status.HTTP_400_BAD_REQUEST)
+    user.set_password(password)
+    user.password_reset_token = ''
+    user.password_reset_expires = None
+    user.save(update_fields=['password', 'password_reset_token', 'password_reset_expires'])
+    return Response({'detail': 'Пароль успешно изменён'})
 
 @api_view(['POST'])
 def login(request):

@@ -1,804 +1,595 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { Button } from '../components/ui/button';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
-import { Plus, Trash2, FileText, Send, X, Copy, Check, Pencil, Share2, UserCheck, Building2 } from 'lucide-react';
+import { Plus, Trash2, FileText, Send, X, Copy, Check, Pencil, UserCheck, Building2, Eye, Upload, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 
-const COMMON_VARS = ['имя', 'фамилия', 'дата', 'сумма', 'адрес', 'телефон', 'компания', 'иин'];
-
 type FieldType = 'text' | 'date' | 'number' | 'phone' | 'iin';
 
 const FIELD_TYPES: { value: FieldType; label: string }[] = [
-    { value: 'text', label: 'Текст' },
-    { value: 'date', label: 'Дата' },
-    { value: 'number', label: 'Число / Сумма' },
-    { value: 'phone', label: 'Телефон' },
-    { value: 'iin', label: 'ИИН' },
+  { value: 'text', label: 'Текст' },
+  { value: 'date', label: 'Дата' },
+  { value: 'number', label: 'Число / Сумма' },
+  { value: 'phone', label: 'Телефон' },
+  { value: 'iin', label: 'ИИН' },
 ];
 
 function autoType(name: string): FieldType {
-    const n = name.toLowerCase();
-    if (/дата|date|күн|кун/.test(n)) return 'date';
-    if (/иин|жсн|iin/.test(n)) return 'iin';
-    if (/тел|phone/.test(n)) return 'phone';
-    if (/сумм|цен|стоимост|оплат|число/.test(n)) return 'number';
-    return 'text';
+  const n = name.toLowerCase();
+  if (/дата|date|күн/.test(n)) return 'date';
+  if (/иин|жсн|iin/.test(n)) return 'iin';
+  if (/тел|phone/.test(n)) return 'phone';
+  if (/сумм|цен|стоимост|оплат/.test(n)) return 'number';
+  return 'text';
 }
 
 function autoCategory(name: string): string {
-    const n = name.toLowerCase();
-    if (/имя|аты|фами|жөн|иин|жсн|тел|адрес|email|заказчик|клиент|ученик|покупател/.test(n))
-        return 'ДАННЫЕ ЗАКАЗЧИКА';
-    if (/сумм|цен|стоимост|оплат|тариф/.test(n))
-        return 'ОПЛАТА';
-    return 'УСЛОВИЯ ДОГОВОРА';
+  const n = name.toLowerCase();
+  if (/имя|аты|фами|жөн|иин|жсн|тел|адрес|email|заказчик|клиент|ученик/.test(n)) return 'ДАННЫЕ ЗАКАЗЧИКА';
+  if (/сумм|цен|стоимост|оплат|тариф/.test(n)) return 'ОПЛАТА';
+  return 'УСЛОВИЯ ДОГОВОРА';
 }
 
-function humanize(name: string): string {
-    return name.replace(/_/g, ' ');
-}
+function humanize(name: string) { return name.replace(/_/g, ' '); }
 
 function groupByCategory(fields: FieldState[]): Record<string, FieldState[]> {
-    const groups: Record<string, FieldState[]> = {};
-    for (const f of fields) {
-        const cat = autoCategory(f.name);
-        if (!groups[cat]) groups[cat] = [];
-        groups[cat].push(f);
-    }
-    return groups;
+  const groups: Record<string, FieldState[]> = {};
+  for (const f of fields) {
+    const cat = autoCategory(f.name);
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(f);
+  }
+  return groups;
 }
 
-const CAT_COLORS: Record<string, { dot: string; text: string; bg: string }> = {
-    'ДАННЫЕ ЗАКАЗЧИКА': { dot: 'bg-blue-500', text: 'text-blue-700', bg: 'bg-blue-50' },
-    'ОПЛАТА': { dot: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50' },
-    'УСЛОВИЯ ДОГОВОРА': { dot: 'bg-purple-500', text: 'text-purple-700', bg: 'bg-purple-50' },
+const CAT_COLORS: Record<string, { dot: string; text: string; bg: string; border: string }> = {
+  'ДАННЫЕ ЗАКАЗЧИКА': { dot: 'bg-[#0F52BA]', text: 'text-[#0F52BA]', bg: 'bg-[#D6E6F3]', border: 'border-[#A6C5D7]' },
+  'ОПЛАТА': { dot: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50', border: 'border-orange-200' },
+  'УСЛОВИЯ ДОГОВОРА': { dot: 'bg-purple-500', text: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
 };
 function catColor(cat: string) {
-    return CAT_COLORS[cat] || { dot: 'bg-green-500', text: 'text-green-700', bg: 'bg-green-50' };
+  return CAT_COLORS[cat] || { dot: 'bg-green-500', text: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200' };
 }
 
-interface FieldState {
-    name: string;
-    type: FieldType;
-    isClient: boolean;
-    value: string;
+interface FieldState { name: string; type: FieldType; isClient: boolean; value: string; }
+interface Template { id: number; title: string; description: string; file: string; file_name: string; template_fields: string[]; created_at: string; }
+interface UseTemplateModal { template: Template; docTitle: string; fields: FieldState[]; }
+interface CreatedDoc { uuid: string; title: string; }
+
+/* ── DOCX Preview Component ── */
+function DocxPreview({ url, token, className = '' }: { url: string; token: string | null; className?: string }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setBusy(true);
+    setHtml(null);
+    (async () => {
+      try {
+        const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+        if (!res.ok) throw new Error('fetch failed');
+        const buffer = await res.arrayBuffer();
+        const mammoth = await import('mammoth');
+        const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+        if (!cancelled) setHtml(result.value || '<p style="color:#6B7E92">Документ пустой</p>');
+      } catch {
+        if (!cancelled) setHtml('<p style="color:#6B7E92;padding:12px">Предпросмотр недоступен</p>');
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (busy) return (
+    <div className={`flex items-center justify-center py-16 ${className}`}>
+      <div className="flex flex-col items-center gap-2">
+        <div className="w-6 h-6 border-2 border-[#0F52BA] border-t-transparent rounded-full animate-spin" />
+        <span className="text-xs text-[#6B7E92]">Загрузка предпросмотра...</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div
+      className={`prose prose-sm max-w-none text-[#0D1B2A] overflow-y-auto ${className}`}
+      style={{ fontSize: '13px', lineHeight: '1.6' }}
+      dangerouslySetInnerHTML={{ __html: html || '' }}
+    />
+  );
 }
 
-interface Template {
-    id: number;
-    title: string;
-    description: string;
-    file_key: string;
-    file_name: string;
-    template_fields: string[];
-    created_at: string;
+/* ── Local file preview (before upload) ── */
+function LocalDocxPreview({ file }: { file: File }) {
+  const [html, setHtml] = useState<string | null>(null);
+  const [busy, setBusy] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const buffer = await file.arrayBuffer();
+        const mammoth = await import('mammoth');
+        const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
+        if (!cancelled) setHtml(result.value);
+      } catch {
+        if (!cancelled) setHtml('<p style="color:#6B7E92">Предпросмотр недоступен</p>');
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [file]);
+
+  if (busy) return (
+    <div className="flex items-center justify-center py-16">
+      <div className="w-6 h-6 border-2 border-[#0F52BA] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  return (
+    <div
+      className="prose prose-sm max-w-none text-[#0D1B2A] overflow-y-auto p-4 max-h-[400px]"
+      style={{ fontSize: '13px', lineHeight: '1.6' }}
+      dangerouslySetInnerHTML={{ __html: html || '' }}
+    />
+  );
 }
 
-interface UseTemplateModal {
-    template: Template;
-    docTitle: string;
-    fields: FieldState[];
-}
-
-interface CreatedDoc {
-    uuid: string;
-    title: string;
-}
-
-function EditorToolbar({
-    textareaRef,
-    value,
-    onChange,
-}: {
-    textareaRef: React.RefObject<HTMLTextAreaElement>;
-    value: string;
-    onChange: (v: string) => void;
-}) {
-    const [customVar, setCustomVar] = useState('');
-
-    const insert = (varName: string) => {
-        const el = textareaRef.current;
-        if (!el) return;
-        const start = el.selectionStart;
-        const end = el.selectionEnd;
-        const newVal = value.slice(0, start) + `{{${varName}}}` + value.slice(end);
-        onChange(newVal);
-        requestAnimationFrame(() => {
-            el.selectionStart = el.selectionEnd = start + varName.length + 4;
-            el.focus();
-        });
-    };
-
-    return (
-        <div className="flex flex-wrap items-center gap-1.5 mb-2 p-2 bg-muted/50 rounded-lg border border-border">
-            <span className="text-xs text-muted-foreground mr-1">Вставить:</span>
-            {COMMON_VARS.map(v => (
-                <button
-                    key={v}
-                    type="button"
-                    onClick={() => insert(v)}
-                    className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 font-mono transition-colors"
-                >
-                    {`{{${v}}}`}
-                </button>
-            ))}
-            <div className="flex gap-1 ml-auto">
-                <input
-                    value={customVar}
-                    onChange={e => setCustomVar(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && customVar) { insert(customVar); setCustomVar(''); } }}
-                    placeholder="своя переменная"
-                    className="text-xs px-2 py-1 border border-border rounded bg-background w-32 focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-                <button
-                    type="button"
-                    onClick={() => { if (customVar.trim()) { insert(customVar.trim()); setCustomVar(''); } }}
-                    className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors"
-                >
-                    + добавить
-                </button>
-            </div>
-        </div>
-    );
-}
-
+/* ── Main Component ── */
 export function Templates() {
-    const { token, user } = useAuth();
-    const navigate = useNavigate();
+  const { token, user } = useAuth();
+  const navigate = useNavigate();
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [justCreated, setJustCreated] = useState<Template | null>(null);
+  const [modal, setModal] = useState<UseTemplateModal | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [createdDoc, setCreatedDoc] = useState<CreatedDoc | null>(null);
+  const [copied, setCopied] = useState(false);
 
-    const [templates, setTemplates] = useState<Template[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [justCreated, setJustCreated] = useState<Template | null>(null);
+  const isAllowed = user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN' || user?.role === 'MANAGER';
 
-    // Upload mode state
-    const [createMode, setCreateMode] = useState<'upload' | 'editor'>('upload');
-    const [file, setFile] = useState<File | null>(null);
-    const [title, setTitle] = useState('');
-    const [description, setDescription] = useState('');
+  useEffect(() => { fetchTemplates(); }, [token]);
 
-    // Editor (create) state
-    const [editorContent, setEditorContent] = useState('');
-    const createTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const fetchTemplates = async () => {
+    if (!token) return;
+    const res = await fetch(`${API_BASE}/api/documents/templates/`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) setTemplates(await res.json());
+  };
 
-    // Use-template modal
-    const [modal, setModal] = useState<UseTemplateModal | null>(null);
-    const [submitting, setSubmitting] = useState(false);
-    const [createdDoc, setCreatedDoc] = useState<CreatedDoc | null>(null);
-    const [copied, setCopied] = useState(false);
-
-    // Edit template modal
-    const [editModal, setEditModal] = useState<{ template: Template; } | null>(null);
-    const [editContent, setEditContent] = useState('');
-    const [editTitle, setEditTitle] = useState('');
-    const [editSaving, setEditSaving] = useState(false);
-    const editTextareaRef = useRef<HTMLTextAreaElement>(null);
-
-    const isAllowed = user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN' || user?.role === 'MANAGER';
-
-    useEffect(() => { fetchTemplates(); }, [token]);
-
-    const fetchTemplates = async () => {
-        if (!token) return;
-        const res = await fetch(`${API_BASE}/api/documents/templates/`, {
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) setTemplates(await res.json());
-    };
-
-    const handleUpload = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!token) return;
-        setLoading(true); setError(null);
-
-        const formData = new FormData();
-        if (createMode === 'upload') {
-            if (!file) return;
-            formData.append('file', file);
-            formData.append('title', title || file.name);
-        } else {
-            if (!editorContent.trim()) return;
-            formData.append('content', editorContent);
-            formData.append('title', title || 'Шаблон');
-        }
-        formData.append('description', description);
-
-        try {
-            const res = await fetch(`${API_BASE}/api/documents/templates/`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-            });
-            if (!res.ok) throw new Error((await res.json()).detail || 'Upload failed');
-            const tmpl = await res.json();
-            setTemplates([tmpl, ...templates]);
-            setJustCreated(tmpl);
-            setFile(null); setTitle(''); setDescription(''); setEditorContent('');
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleDelete = async (id: number) => {
-        if (!token || !confirm('Удалить шаблон?')) return;
-        await fetch(`${API_BASE}/api/documents/templates/${id}/`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` },
-        });
-        setTemplates(templates.filter(t => t.id !== id));
-    };
-
-    const openEditModal = async (tmpl: Template) => {
-        try {
-            const res = await fetch(`${API_BASE}/api/documents/templates/${tmpl.id}/text/`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            if (!res.ok) throw new Error(`Server error: ${res.status}`);
-            const data = await res.json();
-            setEditModal({ template: tmpl });
-            setEditContent(data.content || '');
-            setEditTitle(tmpl.title);
-        } catch (e: any) {
-            alert('Не удалось загрузить шаблон: ' + e.message);
-        }
-    };
-
-    const handleSaveEdit = async () => {
-        if (!editModal || !token) return;
-        setEditSaving(true);
-        try {
-            const res = await fetch(`${API_BASE}/api/documents/templates/${editModal.template.id}/text/`, {
-                method: 'PUT',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: editContent, title: editTitle }),
-            });
-            if (!res.ok) throw new Error((await res.json()).detail || 'Ошибка');
-            const updated = await res.json();
-            setTemplates(templates.map(t => t.id === updated.id ? updated : t));
-            setEditModal(null);
-        } catch (err: any) {
-            alert(err.message);
-        } finally {
-            setEditSaving(false);
-        }
-    };
-
-    const openModal = (tmpl: Template) => {
-        const fields: FieldState[] = tmpl.template_fields.map(name => ({
-            name,
-            type: autoType(name),
-            isClient: true,
-            value: '',
-        }));
-        setModal({ template: tmpl, docTitle: tmpl.title, fields });
-        setCreatedDoc(null);
-    };
-
-    const updateField = (name: string, update: Partial<FieldState>) => {
-        setModal(m => m ? { ...m, fields: m.fields.map(f => f.name === name ? { ...f, ...update } : f) } : null);
-    };
-
-    const handleUseTemplate = async () => {
-        if (!modal || !token) return;
-        setSubmitting(true);
-        try {
-            const managerFields: Record<string, string> = {};
-            const clientFields: { name: string; type: FieldType }[] = [];
-            for (const f of modal.fields) {
-                if (f.isClient) clientFields.push({ name: f.name, type: f.type });
-                else managerFields[f.name] = f.value;
-            }
-
-            const res = await fetch(`${API_BASE}/api/documents/templates/${modal.template.id}/use/`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    title: modal.docTitle,
-                    fields: managerFields,
-                    client_fields: clientFields,
-                }),
-            });
-            if (!res.ok) throw new Error((await res.json()).detail || 'Failed');
-            const doc = await res.json();
-            setCreatedDoc({ uuid: doc.uuid, title: doc.title });
-        } catch (err: any) {
-            alert(err.message);
-        } finally {
-            setSubmitting(false);
-        }
-    };
-
-    const handleCopyLink = () => {
-        if (!createdDoc) return;
-        navigator.clipboard.writeText(`${window.location.origin}/sign/${createdDoc.uuid}`);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    };
-
-    if (!isAllowed) {
-        return (
-            <div className="flex flex-col min-h-screen">
-                <Header />
-                <main className="flex-grow pt-28 flex items-center justify-center">
-                    <p className="text-gray-500">Доступ запрещён.</p>
-                </main>
-                <Footer />
-            </div>
-        );
+  const handleUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token || !file) return;
+    setLoading(true); setError(null);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title || file.name);
+    formData.append('description', description);
+    try {
+      const res = await fetch(`${API_BASE}/api/documents/templates/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || 'Ошибка загрузки');
+      const tmpl = await res.json();
+      setTemplates([tmpl, ...templates]);
+      setJustCreated(tmpl);
+      setFile(null); setTitle(''); setDescription('');
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
+  };
 
-    return (
-        <div className="flex flex-col min-h-screen bg-background text-foreground">
-            <Header />
+  const handleDelete = async (id: number) => {
+    if (!token || !confirm('Удалить шаблон?')) return;
+    await fetch(`${API_BASE}/api/documents/templates/${id}/`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setTemplates(templates.filter(t => t.id !== id));
+  };
 
-            <main className="flex-grow pt-28 pb-12 px-4">
-                <div className="container mx-auto max-w-4xl">
-                    <h1 className="text-3xl font-bold mb-8 text-primary">Шаблоны договоров</h1>
+  const openModal = (tmpl: Template) => {
+    const fields: FieldState[] = tmpl.template_fields.map(name => ({
+      name, type: autoType(name), isClient: true, value: '',
+    }));
+    setModal({ template: tmpl, docTitle: tmpl.title, fields });
+    setCreatedDoc(null);
+  };
 
-                    {/* Create Template Section */}
-                    <div className="bg-card p-8 rounded-2xl border border-border shadow-sm mb-8">
-                        <h2 className="text-xl font-semibold mb-4">Добавить шаблон</h2>
+  const updateField = (name: string, update: Partial<FieldState>) => {
+    setModal(m => m ? { ...m, fields: m.fields.map(f => f.name === name ? { ...f, ...update } : f) } : null);
+  };
 
-                        {/* Mode toggle */}
-                        <div className="flex gap-2 mb-6">
-                            <button
-                                type="button"
-                                onClick={() => setCreateMode('upload')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${createMode === 'upload' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-                            >
-                                Загрузить файл
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setCreateMode('editor')}
-                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${createMode === 'editor' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-                            >
-                                Создать в редакторе
-                            </button>
-                        </div>
+  const handleUseTemplate = async () => {
+    if (!modal || !token) return;
+    setSubmitting(true);
+    try {
+      const managerFields: Record<string, string> = {};
+      const clientFields: { name: string; type: FieldType }[] = [];
+      for (const f of modal.fields) {
+        if (f.isClient) clientFields.push({ name: f.name, type: f.type });
+        else managerFields[f.name] = f.value;
+      }
+      const res = await fetch(`${API_BASE}/api/documents/templates/${modal.template.id}/use/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: modal.docTitle, fields: managerFields, client_fields: clientFields, client_phone: (modal as any).clientPhone || '' }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || 'Ошибка');
+      const doc = await res.json();
+      setCreatedDoc({ uuid: doc.uuid, title: doc.title });
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-                        <form onSubmit={handleUpload} className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Название</label>
-                                    <input
-                                        value={title}
-                                        onChange={e => setTitle(e.target.value)}
-                                        placeholder="Договор аренды"
-                                        className="w-full border border-border px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Описание</label>
-                                    <input
-                                        value={description}
-                                        onChange={e => setDescription(e.target.value)}
-                                        placeholder="Краткое описание"
-                                        className="w-full border border-border px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background"
-                                    />
-                                </div>
-                            </div>
+  const handleCopyLink = () => {
+    if (!createdDoc) return;
+    navigator.clipboard.writeText(`${window.location.origin}/sign/${createdDoc.uuid}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
-                            {createMode === 'upload' ? (
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Файл (.docx / .pdf)</label>
-                                    <p className="text-xs text-muted-foreground mb-2">
-                                        Используйте плейсхолдеры вида <code className="bg-muted px-1 rounded">{'{{имя_поля}}'}</code> в документе.
-                                    </p>
-                                    <input
-                                        type="file"
-                                        accept=".docx,.pdf,.doc"
-                                        onChange={e => setFile(e.target.files?.[0] || null)}
-                                        className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:font-semibold file:bg-secondary file:text-secondary-foreground hover:file:bg-secondary/80 border border-border rounded-lg cursor-pointer"
-                                        required
-                                    />
-                                </div>
-                            ) : (
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Содержимое шаблона</label>
-                                    <EditorToolbar
-                                        textareaRef={createTextareaRef}
-                                        value={editorContent}
-                                        onChange={setEditorContent}
-                                    />
-                                    <textarea
-                                        ref={createTextareaRef}
-                                        value={editorContent}
-                                        onChange={e => setEditorContent(e.target.value)}
-                                        placeholder={`Введите текст договора...\n\nНапример:\nДоговор аренды\n\nАрендатор: {{имя}} {{фамилия}}\nАдрес: {{адрес}}\nСумма: {{сумма}} тенге\nДата: {{дата}}`}
-                                        className="w-full border border-border px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-background font-mono text-sm resize-y"
-                                        style={{ minHeight: '260px' }}
-                                        required
-                                    />
-                                </div>
-                            )}
+  const inputClass = 'w-full bg-white border border-[#A6C5D7] px-4 py-2.5 rounded-xl text-sm text-[#0D1B2A] placeholder-[#A6C5D7] focus:outline-none focus:ring-2 focus:ring-[#0F52BA]/30 focus:border-[#0F52BA] transition-colors';
 
-                            {error && <div className="text-destructive text-sm">{error}</div>}
-                            <Button
-                                type="submit"
-                                disabled={(createMode === 'upload' ? !file : !editorContent.trim()) || loading}
-                                className="w-full md:w-auto"
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                {loading ? 'Сохранение...' : 'Добавить шаблон'}
-                            </Button>
-                        </form>
+  if (!isAllowed) return (
+    <div className="flex flex-col min-h-screen">
+      <Header />
+      <main className="flex-grow pt-28 flex items-center justify-center">
+        <p className="text-[#6B7E92]">Доступ запрещён.</p>
+      </main>
+      <Footer />
+    </div>
+  );
 
-                        {/* Just-created field preview */}
-                        {justCreated && (
-                            <div className="mt-6 border-t pt-5">
-                                <div className="flex items-center justify-between mb-3">
-                                    <p className="text-sm font-semibold text-green-700 flex items-center gap-1.5">
-                                        <Check className="w-4 h-4" /> Шаблон «{justCreated.title}» создан
-                                    </p>
-                                    <button onClick={() => setJustCreated(null)} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
-                                </div>
-                                {justCreated.template_fields.length > 0 ? (
-                                    <>
-                                        <p className="text-xs text-gray-500 mb-2">Обнаруженные поля ({justCreated.template_fields.length}):</p>
-                                        <div className="flex flex-wrap gap-2 mb-3">
-                                            {justCreated.template_fields.map(f => {
-                                                const clr = catColor(autoCategory(f));
-                                                return (
-                                                    <span key={f} className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full font-mono ${clr.bg} ${clr.text}`}>
-                                                        <span className={`w-1.5 h-1.5 rounded-full ${clr.dot}`} />
-                                                        {`{{${f}}}`}
-                                                    </span>
-                                                );
-                                            })}
-                                        </div>
-                                        <Button size="sm" onClick={() => { openModal(justCreated); setJustCreated(null); }} className="bg-blue-600 hover:bg-blue-700 text-white">
-                                            <Send className="w-3 h-3 mr-1" /> Настроить поля и создать договор
-                                        </Button>
-                                    </>
-                                ) : (
-                                    <p className="text-xs text-gray-400 italic">В документе не найдено полей {'{{field}}'}. Используйте редактор чтобы добавить их.</p>
-                                )}
-                            </div>
-                        )}
-                    </div>
+  const isDocx = file?.name.toLowerCase().endsWith('.docx');
 
-                    {/* Templates List */}
-                    <div className="bg-card rounded-2xl border border-border shadow-sm overflow-hidden">
-                        <table className="min-w-full divide-y divide-border">
-                            <thead className="bg-muted/50">
-                                <tr>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Название</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Поля</th>
-                                    <th className="px-6 py-4 text-left text-xs font-semibold text-muted-foreground uppercase">Дата</th>
-                                    <th className="px-6 py-4 text-right text-xs font-semibold text-muted-foreground uppercase">Действия</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border bg-card">
-                                {templates.map(tmpl => (
-                                    <tr key={tmpl.id} className="hover:bg-muted/20 transition-colors">
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                <FileText className="w-4 h-4 text-primary flex-shrink-0" />
-                                                <div>
-                                                    <button
-                                                        onClick={async () => {
-                                                            const res = await fetch(`${API_BASE}/api/documents/templates/${tmpl.id}/file/`, { headers: { Authorization: `Bearer ${token}` } });
-                                                            if (!res.ok) return;
-                                                            const blob = await res.blob();
-                                                            const a = document.createElement('a');
-                                                            a.href = URL.createObjectURL(blob);
-                                                            a.download = tmpl.file_name || tmpl.title;
-                                                            a.click();
-                                                        }}
-                                                        className="font-medium text-primary hover:underline text-left"
-                                                    >
-                                                        {tmpl.title}
-                                                    </button>
-                                                    {tmpl.description && (
-                                                        <p className="text-xs text-muted-foreground">{tmpl.description}</p>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 max-w-xs">
-                                            {tmpl.template_fields.length > 0 ? (
-                                                <div className="flex flex-wrap gap-1">
-                                                    {tmpl.template_fields.map(f => (
-                                                        <span key={f} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-mono max-w-[12rem] truncate" title={f}>
-                                                            {'{{'}{f}{'}}'}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <span className="text-xs text-muted-foreground">—</span>
-                                            )}
-                                        </td>
-                                        <td className="px-6 py-4 text-sm text-muted-foreground whitespace-nowrap">
-                                            {new Date(tmpl.created_at).toLocaleDateString()}
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() => openModal(tmpl)}
-                                                    className="bg-primary text-primary-foreground hover:bg-primary/90"
-                                                >
-                                                    <Send className="w-3 h-3 mr-1" />
-                                                    Использовать
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => openEditModal(tmpl)}
-                                                >
-                                                    <Pencil className="w-3 h-3 mr-1" />
-                                                    Изменить
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() => handleDelete(tmpl.id)}
-                                                    className="border-destructive text-destructive hover:bg-destructive/10"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </Button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {templates.length === 0 && (
-                                    <tr>
-                                        <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
-                                            Нет шаблонов. Добавьте первый шаблон выше.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
+  return (
+    <div className="flex flex-col min-h-screen bg-[#F5F8FF]">
+      <Header />
+      <main className="flex-grow pt-28 pb-12 px-4">
+        <div className="container mx-auto max-w-5xl">
+
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-[#000926] tracking-tight">Шаблоны договоров</h1>
+            <p className="text-sm text-[#6B7E92] mt-1">Загрузите DOCX шаблон с плейсхолдерами вида <code className="bg-[#D6E6F3] px-1 rounded text-[#0F52BA]">{'{{поле}}'}</code></p>
+          </div>
+
+          {/* Upload card — two-column when file selected */}
+          <div className="bg-white rounded-2xl border border-[#D6E6F3] shadow-sm mb-8 overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#D6E6F3]">
+              <h2 className="text-base font-semibold text-[#000926]">Добавить шаблон</h2>
+            </div>
+
+            <div className={`flex ${file && isDocx ? 'flex-col lg:flex-row' : 'flex-col'}`}>
+              {/* Left: form */}
+              <form onSubmit={handleUpload} className={`p-6 space-y-4 ${file && isDocx ? 'lg:w-1/2 lg:border-r lg:border-[#D6E6F3]' : 'w-full'}`}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-1.5">Название</label>
+                    <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Договор аренды" className={inputClass} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-1.5">Описание</label>
+                    <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Краткое описание" className={inputClass} />
+                  </div>
                 </div>
-            </main>
 
-            <Footer />
+                <div>
+                  <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-1.5">Файл (.docx / .pdf)</label>
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-[#A6C5D7] rounded-xl cursor-pointer hover:border-[#0F52BA] hover:bg-[#F5F8FF] transition-colors">
+                    <Upload className="w-6 h-6 text-[#A6C5D7] mb-2" />
+                    {file ? (
+                      <span className="text-sm font-medium text-[#0F52BA]">{file.name}</span>
+                    ) : (
+                      <span className="text-sm text-[#6B7E92]">Перетащите или <span className="text-[#0F52BA] font-medium">выберите файл</span></span>
+                    )}
+                    <input type="file" accept=".docx,.pdf,.doc" onChange={e => setFile(e.target.files?.[0] || null)} className="hidden" required />
+                  </label>
+                </div>
 
-            {/* Edit Template Modal */}
-            {editModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-6 relative flex flex-col" style={{ maxHeight: '90vh' }}>
-                        <button onClick={() => setEditModal(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-                            <X className="w-5 h-5" />
+                {error && <div className="text-red-600 text-sm bg-red-50 border border-red-200 px-4 py-2 rounded-xl">{error}</div>}
+
+                <button
+                  type="submit"
+                  disabled={!file || loading}
+                  className="flex items-center gap-2 bg-[#0F52BA] hover:bg-[#0a3d8f] disabled:opacity-50 text-white font-semibold px-5 py-2.5 rounded-xl transition-colors text-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  {loading ? 'Сохранение...' : 'Добавить шаблон'}
+                </button>
+
+                {/* Just-created result */}
+                {justCreated && (
+                  <div className="border border-[#D6E6F3] rounded-xl p-4 bg-[#F5F8FF]">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-semibold text-[#0F7B55] flex items-center gap-1.5">
+                        <Check className="w-4 h-4" /> «{justCreated.title}» создан
+                      </p>
+                      <button onClick={() => setJustCreated(null)}><X className="w-4 h-4 text-[#6B7E92]" /></button>
+                    </div>
+                    {justCreated.template_fields.length > 0 ? (
+                      <>
+                        <p className="text-xs text-[#6B7E92] mb-2">Поля ({justCreated.template_fields.length}):</p>
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {justCreated.template_fields.map(f => {
+                            const clr = catColor(autoCategory(f));
+                            return (
+                              <span key={f} className={`text-xs px-2 py-0.5 rounded-full font-mono ${clr.bg} ${clr.text}`}>
+                                {`{{${f}}}`}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={() => { openModal(justCreated); setJustCreated(null); }}
+                          className="flex items-center gap-1.5 text-sm font-semibold text-[#0F52BA] hover:underline"
+                        >
+                          <Send className="w-3.5 h-3.5" /> Настроить и создать договор
                         </button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-[#6B7E92] italic">Плейсхолдеры не найдены.</p>
+                    )}
+                  </div>
+                )}
+              </form>
 
-                        <h3 className="text-xl font-bold mb-4">Редактировать шаблон</h3>
-
-                        <div className="mb-3">
-                            <label className="block text-sm font-medium mb-1">Название</label>
-                            <input
-                                value={editTitle}
-                                onChange={e => setEditTitle(e.target.value)}
-                                className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                        </div>
-
-                        <div className="flex-1 flex flex-col min-h-0">
-                            <label className="block text-sm font-medium mb-1">Содержимое</label>
-                            <EditorToolbar
-                                textareaRef={editTextareaRef}
-                                value={editContent}
-                                onChange={setEditContent}
-                            />
-                            <textarea
-                                ref={editTextareaRef}
-                                value={editContent}
-                                onChange={e => setEditContent(e.target.value)}
-                                className="flex-1 w-full border border-gray-300 px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-none"
-                                style={{ minHeight: '300px' }}
-                            />
-                        </div>
-
-                        <div className="flex gap-3 mt-4">
-                            <Button
-                                onClick={handleSaveEdit}
-                                disabled={editSaving}
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white"
-                            >
-                                {editSaving ? 'Сохранение...' : 'Сохранить'}
-                            </Button>
-                            <Button variant="outline" onClick={() => setEditModal(null)} className="flex-1">
-                                Отмена
-                            </Button>
-                        </div>
-                    </div>
+              {/* Right: DOCX preview */}
+              {file && isDocx && (
+                <div className="lg:w-1/2 border-t lg:border-t-0 border-[#D6E6F3]">
+                  <div className="px-4 py-3 border-b border-[#D6E6F3] flex items-center gap-2 bg-[#F5F8FF]">
+                    <Eye className="w-4 h-4 text-[#0F52BA]" />
+                    <span className="text-xs font-semibold text-[#6B7E92] uppercase tracking-wider">Предпросмотр</span>
+                  </div>
+                  <LocalDocxPreview file={file} />
                 </div>
-            )}
+              )}
+            </div>
+          </div>
 
-            {/* Use Template Modal */}
-            {modal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl relative flex flex-col" style={{ maxHeight: '92vh' }}>
-                        <button onClick={() => setModal(null)} className="absolute top-4 right-4 z-10 text-gray-400 hover:text-gray-600">
-                            <X className="w-5 h-5" />
-                        </button>
-
-                        {createdDoc ? (
-                            <div className="p-8 text-center">
-                                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <Check className="w-6 h-6 text-green-600" />
-                                </div>
-                                <h3 className="text-xl font-bold mb-1">Договор создан!</h3>
-                                <p className="text-sm text-gray-500 mb-6">{createdDoc.title}</p>
-                                <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 mb-4 text-left">
-                                    <p className="text-xs text-gray-500 mb-1">Ссылка для клиента:</p>
-                                    <p className="text-sm font-mono break-all text-gray-800">
-                                        {window.location.origin}/sign/{createdDoc.uuid}
-                                    </p>
-                                </div>
-                                <div className="flex gap-3">
-                                    <Button onClick={handleCopyLink} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
-                                        {copied ? <><Check className="w-4 h-4 mr-1" />Скопировано</> : <><Copy className="w-4 h-4 mr-1" />Скопировать ссылку</>}
-                                    </Button>
-                                    <Button variant="outline" onClick={() => navigate('/documents')} className="flex-1">
-                                        Перейти к договорам
-                                    </Button>
-                                </div>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="px-6 py-4 border-b flex-shrink-0">
-                                    <h3 className="text-lg font-bold text-gray-900">Создать договор из шаблона</h3>
-                                    <p className="text-sm text-gray-500">Шаблон: <strong>{modal.template.title}</strong></p>
-                                </div>
-
-                                <div className="flex flex-1 overflow-hidden min-h-0">
-                                    {/* Left: field configuration */}
-                                    <div className="w-1/2 flex flex-col overflow-y-auto border-r p-6 gap-5">
-                                        <div>
-                                            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Название договора *</label>
-                                            <input
-                                                value={modal.docTitle}
-                                                onChange={e => setModal({ ...modal, docTitle: e.target.value })}
-                                                className="w-full border border-gray-300 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                            />
-                                        </div>
-
-                                        {modal.fields.length > 0 ? (
-                                            <div>
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                                                        Поля ({modal.fields.length})
-                                                    </label>
-                                                    <span className="text-xs text-gray-400 flex items-center gap-2">
-                                                        <UserCheck className="w-3 h-3 inline" /> клиент
-                                                        <Building2 className="w-3 h-3 inline ml-1" /> менеджер
-                                                    </span>
-                                                </div>
-                                                {Object.entries(groupByCategory(modal.fields)).map(([cat, catFields]) => {
-                                                    const clr = catColor(cat);
-                                                    return (
-                                                        <div key={cat} className="mb-5">
-                                                            <div className={`flex items-center gap-2 px-2 py-1 rounded-md mb-2 ${clr.bg}`}>
-                                                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${clr.dot}`} />
-                                                                <span className={`text-xs font-semibold uppercase tracking-wide ${clr.text}`}>{cat} ({catFields.length})</span>
-                                                            </div>
-                                                            <div className="space-y-2">
-                                                                {catFields.map(f => (
-                                                                    <div key={f.name} className="border border-gray-200 rounded-lg p-3">
-                                                                        <div className="flex items-center justify-between mb-2">
-                                                                            <div className="flex items-center gap-1.5 min-w-0">
-                                                                                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${clr.dot}`} />
-                                                                                <span className="text-sm font-medium text-gray-800 truncate">{humanize(f.name)}</span>
-                                                                                <span className="text-xs text-gray-400 font-mono flex-shrink-0">{`{{${f.name}}}`}</span>
-                                                                            </div>
-                                                                            <label className="flex items-center gap-1 cursor-pointer flex-shrink-0 ml-2">
-                                                                                <input
-                                                                                    type="checkbox"
-                                                                                    checked={f.isClient}
-                                                                                    onChange={() => updateField(f.name, { isClient: !f.isClient, value: '' })}
-                                                                                    className="w-3.5 h-3.5 accent-blue-600"
-                                                                                />
-                                                                                <UserCheck className="w-3.5 h-3.5 text-blue-500" />
-                                                                            </label>
-                                                                        </div>
-                                                                        <div className="flex gap-2">
-                                                                            <select
-                                                                                value={f.type}
-                                                                                onChange={e => updateField(f.name, { type: e.target.value as FieldType })}
-                                                                                className="text-xs border border-gray-200 rounded px-2 py-1.5 bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                                                            >
-                                                                                {FIELD_TYPES.map(ft => (
-                                                                                    <option key={ft.value} value={ft.value}>{ft.label}</option>
-                                                                                ))}
-                                                                            </select>
-                                                                            {f.isClient ? (
-                                                                                <span className="flex-1 text-xs text-blue-500 italic flex items-center px-2">заполнит клиент при подписании</span>
-                                                                            ) : (
-                                                                                <input
-                                                                                    type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
-                                                                                    value={f.value}
-                                                                                    onChange={e => updateField(f.name, { value: e.target.value })}
-                                                                                    placeholder={`Введите ${humanize(f.name)}`}
-                                                                                    className="flex-1 text-sm border border-gray-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-0"
-                                                                                />
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        ) : (
-                                            <p className="text-sm text-gray-400 italic">Этот шаблон не содержит переменных. Договор будет создан как есть.</p>
-                                        )}
-                                    </div>
-
-                                    {/* Right: document preview */}
-                                    <div className="w-1/2 flex flex-col overflow-y-auto bg-gray-50 p-6">
-                                        <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-200">
-                                            <FileText className="w-4 h-4 text-gray-400" />
-                                            <span className="text-sm font-medium text-gray-600 truncate">{modal.template.file_name || modal.template.title}</span>
-                                        </div>
-
-                                        {modal.fields.length === 0 ? (
-                                            <div className="flex flex-col items-center justify-center flex-1 text-center">
-                                                <FileText className="w-10 h-10 text-gray-200 mb-3" />
-                                                <p className="text-sm text-gray-400">Добавьте поля слева — превью появится автоматически</p>
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                {Object.entries(groupByCategory(modal.fields)).map(([cat, catFields]) => {
-                                                    const clr = catColor(cat);
-                                                    return (
-                                                        <div key={cat}>
-                                                            <div className="flex items-center gap-2 mb-2">
-                                                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${clr.dot}`} />
-                                                                <span className={`text-xs font-semibold uppercase tracking-wide ${clr.text}`}>{cat} ({catFields.length})</span>
-                                                            </div>
-                                                            <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100">
-                                                                {catFields.map(f => (
-                                                                    <div key={f.name} className="flex items-center justify-between px-3 py-2">
-                                                                        <span className="text-xs text-gray-700">{humanize(f.name)}</span>
-                                                                        <div className="flex items-center gap-2">
-                                                                            {f.isClient ? (
-                                                                                <UserCheck className="w-3.5 h-3.5 text-blue-500" />
-                                                                            ) : f.value ? (
-                                                                                <span className="text-xs font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded max-w-[8rem] truncate">{f.value}</span>
-                                                                            ) : (
-                                                                                <Building2 className="w-3.5 h-3.5 text-gray-300" />
-                                                                            )}
-                                                                            <span className="text-xs text-gray-400">{FIELD_TYPES.find(ft => ft.value === f.type)?.label || f.type}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                                <p className="text-xs text-gray-400 flex items-center gap-1 flex-wrap">
-                                                    <UserCheck className="w-3 h-3" /> — заполняет клиент,
-                                                    <Building2 className="w-3 h-3 ml-1" /> — заполняет менеджер, значение = заполнено
-                                                </p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="px-6 py-4 border-t flex-shrink-0 flex gap-3">
-                                    <Button onClick={handleUseTemplate} disabled={submitting} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white">
-                                        {submitting ? 'Создание...' : 'Создать договор'}
-                                    </Button>
-                                    <Button variant="outline" onClick={() => setModal(null)} className="flex-1">
-                                        Отмена
-                                    </Button>
-                                </div>
-                            </>
-                        )}
+          {/* Templates list */}
+          <div className="bg-white rounded-2xl border border-[#D6E6F3] shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-[#D6E6F3]">
+              <h2 className="text-base font-semibold text-[#000926]">Мои шаблоны</h2>
+            </div>
+            <div className="divide-y divide-[#D6E6F3]">
+              {templates.map(tmpl => (
+                <div key={tmpl.id} className="flex items-center gap-4 px-6 py-4 hover:bg-[#F5F8FF] transition-colors">
+                  <div className="w-9 h-9 bg-[#D6E6F3] rounded-xl flex items-center justify-center shrink-0">
+                    <FileText className="w-4 h-4 text-[#0F52BA]" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-[#000926] truncate">{tmpl.title}</p>
+                    {tmpl.description && <p className="text-xs text-[#6B7E92] truncate">{tmpl.description}</p>}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {tmpl.template_fields.slice(0, 4).map(f => (
+                        <span key={f} className="text-[10px] bg-[#D6E6F3] text-[#0F52BA] px-1.5 py-0.5 rounded font-mono">{`{{${f}}}`}</span>
+                      ))}
+                      {tmpl.template_fields.length > 4 && (
+                        <span className="text-[10px] text-[#6B7E92]">+{tmpl.template_fields.length - 4}</span>
+                      )}
                     </div>
+                  </div>
+                  <p className="text-xs text-[#6B7E92] shrink-0 hidden sm:block">
+                    {new Date(tmpl.created_at).toLocaleDateString('ru-RU')}
+                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => openModal(tmpl)}
+                      className="flex items-center gap-1.5 bg-[#0F52BA] hover:bg-[#0a3d8f] text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Send className="w-3 h-3" /> Использовать
+                    </button>
+                    <button
+                      onClick={() => handleDelete(tmpl.id)}
+                      className="p-1.5 border border-red-200 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-            )}
+              ))}
+              {templates.length === 0 && (
+                <div className="px-6 py-16 text-center">
+                  <FileText className="w-10 h-10 text-[#D6E6F3] mx-auto mb-3" />
+                  <p className="text-sm text-[#6B7E92]">Нет шаблонов. Загрузите первый шаблон выше.</p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-    );
+      </main>
+
+      <Footer />
+
+      {/* Use Template Modal */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl flex flex-col" style={{ maxHeight: '92vh' }}>
+            <button onClick={() => setModal(null)} className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full hover:bg-[#D6E6F3] text-[#6B7E92] transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+
+            {createdDoc ? (
+              /* Success screen */
+              <div className="p-8 text-center">
+                <div className="w-14 h-14 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Check className="w-7 h-7 text-[#0F7B55]" />
+                </div>
+                <h3 className="text-xl font-bold text-[#000926] mb-1">Договор создан!</h3>
+                <p className="text-sm text-[#6B7E92] mb-6">{createdDoc.title}</p>
+                <div className="bg-[#F5F8FF] border border-[#D6E6F3] rounded-xl px-4 py-3 mb-5 text-left">
+                  <p className="text-xs text-[#6B7E92] mb-1">Ссылка для клиента:</p>
+                  <p className="text-sm font-mono break-all text-[#000926]">{window.location.origin}/sign/{createdDoc.uuid}</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={handleCopyLink} className="flex-1 flex items-center justify-center gap-2 bg-[#0F52BA] hover:bg-[#0a3d8f] text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">
+                    {copied ? <><Check className="w-4 h-4" />Скопировано</> : <><Copy className="w-4 h-4" />Скопировать ссылку</>}
+                  </button>
+                  <button onClick={() => navigate('/documents')} className="flex-1 border border-[#A6C5D7] text-[#0D1B2A] font-semibold py-2.5 rounded-xl text-sm hover:bg-[#D6E6F3] transition-colors">
+                    К договорам
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Modal header */}
+                <div className="px-6 py-4 border-b border-[#D6E6F3] shrink-0">
+                  <h3 className="text-lg font-bold text-[#000926]">Создать договор из шаблона</h3>
+                  <p className="text-sm text-[#6B7E92]">Шаблон: <strong className="text-[#0D1B2A]">{modal.template.title}</strong></p>
+                </div>
+
+                <div className="flex flex-1 overflow-hidden min-h-0">
+                  {/* Left: field config */}
+                  <div className="w-1/2 flex flex-col overflow-y-auto border-r border-[#D6E6F3] p-6 gap-5">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-1.5">Название договора *</label>
+                      <input
+                        value={modal.docTitle}
+                        onChange={e => setModal({ ...modal, docTitle: e.target.value })}
+                        className="w-full border border-[#A6C5D7] px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0F52BA]/30 focus:border-[#0F52BA]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-1.5">
+                        Телефон клиента <span className="text-[#A6C5D7] font-normal normal-case">(для SMS подтверждения)</span>
+                      </label>
+                      <input
+                        type="tel"
+                        value={(modal as any).clientPhone || ''}
+                        onChange={e => setModal({ ...modal, clientPhone: e.target.value } as any)}
+                        placeholder="+7 (___) ___-__-__"
+                        className="w-full border border-[#A6C5D7] px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0F52BA]/30 focus:border-[#0F52BA]"
+                      />
+                      <p className="text-[10px] text-[#A6C5D7] mt-1">Клиент должен ввести этот номер перед подписанием</p>
+                    </div>
+
+                    {modal.fields.length > 0 ? (
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <label className="text-xs font-semibold text-[#6B7E92] uppercase tracking-wider">Поля ({modal.fields.length})</label>
+                          <span className="text-xs text-[#6B7E92] flex items-center gap-2">
+                            <UserCheck className="w-3 h-3" /> клиент
+                            <Building2 className="w-3 h-3 ml-1" /> менеджер
+                          </span>
+                        </div>
+                        {Object.entries(groupByCategory(modal.fields)).map(([cat, catFields]) => {
+                          const clr = catColor(cat);
+                          return (
+                            <div key={cat} className="mb-5">
+                              <div className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg mb-2 ${clr.bg}`}>
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${clr.dot}`} />
+                                <span className={`text-xs font-semibold uppercase tracking-wide ${clr.text}`}>{cat} ({catFields.length})</span>
+                              </div>
+                              <div className="space-y-2">
+                                {catFields.map(f => (
+                                  <div key={f.name} className={`border rounded-xl p-3 ${clr.border}`}>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${clr.dot}`} />
+                                        <span className="text-sm font-medium text-[#000926] truncate">{humanize(f.name)}</span>
+                                        <span className="text-xs text-[#A6C5D7] font-mono shrink-0">{`{{${f.name}}}`}</span>
+                                      </div>
+                                      <label className="flex items-center gap-1 cursor-pointer shrink-0 ml-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={f.isClient}
+                                          onChange={() => updateField(f.name, { isClient: !f.isClient, value: '' })}
+                                          className="w-3.5 h-3.5 accent-[#0F52BA]"
+                                        />
+                                        <UserCheck className="w-3.5 h-3.5 text-[#0F52BA]" />
+                                      </label>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <select
+                                        value={f.type}
+                                        onChange={e => updateField(f.name, { type: e.target.value as FieldType })}
+                                        className="text-xs border border-[#D6E6F3] rounded-lg px-2 py-1.5 bg-[#F5F8FF] focus:outline-none focus:ring-1 focus:ring-[#0F52BA] text-[#0D1B2A]"
+                                      >
+                                        {FIELD_TYPES.map(ft => <option key={ft.value} value={ft.value}>{ft.label}</option>)}
+                                      </select>
+                                      {f.isClient ? (
+                                        <span className="flex-1 text-xs text-[#0F52BA] italic flex items-center px-2">заполнит клиент при подписании</span>
+                                      ) : (
+                                        <input
+                                          type={f.type === 'date' ? 'date' : f.type === 'number' ? 'number' : 'text'}
+                                          value={f.value}
+                                          onChange={e => updateField(f.name, { value: e.target.value })}
+                                          placeholder={`Введите ${humanize(f.name)}`}
+                                          className="flex-1 text-sm border border-[#D6E6F3] rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#0F52BA] min-w-0"
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-[#6B7E92] italic">Шаблон не содержит переменных. Договор будет создан как есть.</p>
+                    )}
+                  </div>
+
+                  {/* Right: DOCX preview */}
+                  <div className="w-1/2 flex flex-col overflow-hidden bg-[#F5F8FF]">
+                    <div className="px-4 py-3 border-b border-[#D6E6F3] flex items-center gap-2 shrink-0">
+                      <Eye className="w-4 h-4 text-[#0F52BA]" />
+                      <span className="text-xs font-semibold text-[#6B7E92] uppercase tracking-wider">Предпросмотр документа</span>
+                      <span className="text-xs text-[#A6C5D7] truncate ml-auto">{modal.template.file_name}</span>
+                    </div>
+                    {modal.template.file_name?.toLowerCase().endsWith('.docx') ? (
+                      <DocxPreview
+                        url={`${API_BASE}/api/documents/templates/${modal.template.id}/file/`}
+                        token={token}
+                        className="flex-1 p-5"
+                      />
+                    ) : (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
+                        <FileText className="w-10 h-10 text-[#D6E6F3] mb-3" />
+                        <p className="text-sm text-[#6B7E92]">Предпросмотр доступен только для DOCX файлов</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="px-6 py-4 border-t border-[#D6E6F3] shrink-0 flex gap-3">
+                  <button
+                    onClick={handleUseTemplate}
+                    disabled={submitting}
+                    className="flex-1 bg-[#0F52BA] hover:bg-[#0a3d8f] disabled:opacity-60 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    {submitting ? 'Создание...' : <><Send className="w-4 h-4" /> Создать договор</>}
+                  </button>
+                  <button onClick={() => setModal(null)} className="flex-1 border border-[#A6C5D7] text-[#0D1B2A] font-semibold py-2.5 rounded-xl text-sm hover:bg-[#D6E6F3] transition-colors">
+                    Отмена
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

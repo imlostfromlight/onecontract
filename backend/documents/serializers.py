@@ -18,10 +18,15 @@ class DocumentSignatureSerializer(serializers.ModelSerializer):
 
 
 class TemplateSerializer(serializers.ModelSerializer):
+    file_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Template
-        fields = ['id', 'title', 'description', 'file', 'template_fields', 'created_at']
+        fields = ['id', 'title', 'description', 'file', 'file_name', 'template_fields', 'created_at']
         read_only_fields = ['created_at', 'organization', 'template_fields']
+
+    def get_file_name(self, obj):
+        return os.path.basename(obj.file.name) if obj.file else None
 
     def create(self, validated_data):
         validated_data['organization'] = self.context['request'].user
@@ -47,7 +52,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         model = Document
         fields = [
             'id', 'title', 'file', 'file_name', 'status', 'created_at', 'uuid', 'template',
-            'org_signature', 'org_signed_at', 'client_fields',
+            'org_signature', 'org_signed_at', 'client_fields', 'manager_fields', 'client_phone',
             'signatures', 'signature_count',
         ]
         read_only_fields = ['status', 'created_at', 'user', 'org_signature', 'org_signed_at', 'signatures']

@@ -1,7 +1,10 @@
 import os
+import re
+import random
 import logging
 import tempfile
 import urllib.parse
+from datetime import timedelta
 
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
@@ -11,8 +14,9 @@ from django.utils import timezone
 from django.core.files import File
 from django.http import FileResponse
 
-from .models import Document, Template, DocumentSignature
+from .models import Document, Template, DocumentSignature, OTPSession
 from .serializers import DocumentSerializer, TemplateSerializer, DocumentSignatureSerializer
+from .sms_service import send_sms
 from .docx_utils import fill_placeholders
 from .ai_summarizer import extract_text, summarize_document
 from users.ncalayer_auth import verify_ncalayer_signature
@@ -36,6 +40,20 @@ class TemplateViewSet(viewsets.ModelViewSet):
         if user.role == User.Role.SUPERADMIN:
             return Template.objects.all().order_by('-created_at')
         return Template.objects.filter(organization=user).order_by('-created_at')
+
+    @action(detail=True, methods=['get'], url_path='file')
+    def file(self, request, pk=None):
+        template = self.get_object()
+        if not template.file:
+            return Response({'detail': 'No file'}, status=status.HTTP_404_NOT_FOUND)
+        file_name = os.path.basename(template.file.name)
+        encoded_name = urllib.parse.quote(file_name)
+        inline = request.query_params.get('inline', '0') == '1'
+        disposition = 'inline' if inline else 'attachment'
+        response = FileResponse(open(template.file.path, 'rb'))
+        response['Content-Disposition'] = f"{disposition}; filename*=UTF-8''{encoded_name}"
+        response['Cache-Control'] = 'no-store'
+        return response
 
     @action(detail=True, methods=['post'], url_path='use')
     def use_template(self, request, pk=None):
@@ -61,6 +79,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
                 document = Document(
                     user=request.user, template=template, title=title,
                     client_fields=client_fields, manager_fields=fields,
+                    client_phone=request.data.get('client_phone', ''),
                 )
                 with open(dest_path, 'rb') as f:
                     document.file.save(src_name, File(f), save=False)
@@ -159,17 +178,19 @@ class DocumentViewSet(viewsets.ModelViewSet):
         file_name = os.path.basename(document.file.name)
         encoded_name = urllib.parse.quote(file_name)
         response = FileResponse(open(document.file.path, 'rb'))
-        response['Content-Disposition'] = f"attachment; filename*=UTF-8''{encoded_name}"
+        inline = request.query_params.get('inline', '0') == '1'
+        disposition = 'inline' if inline else 'attachment'
+        response['Content-Disposition'] = f"{disposition}; filename*=UTF-8''{encoded_name}"
         response['Cache-Control'] = 'no-store'
+        response['X-Frame-Options'] = 'SAMEORIGIN'
         return response
 
     @action(detail=False, methods=['post'],
             url_path='public/(?P<uuid>[^/.]+)/sign',
-            permission_classes=[permissions.IsAuthenticated])
+            permission_classes=[permissions.AllowAny])
     def public_sign(self, request, uuid=None):
         """
-        Client signs the document via the invite UUID link.
-        Creates a DocumentSignature record — one document can be signed by many clients.
+        Client signs the document via the invite UUID link. No auth required.
         """
         try:
             document = Document.objects.get(uuid=uuid)
@@ -180,29 +201,104 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'This document is closed and no longer accepting signatures'},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # Prevent duplicate signature from same client
-        if DocumentSignature.objects.filter(document=document, client=request.user).exists():
-            return Response({'detail': 'You have already signed this document'},
-                            status=status.HTTP_400_BAD_REQUEST)
+        client = request.user if request.user.is_authenticated else None
+        client_email = client.email if client else request.data.get('email', '')
 
-        signature = request.data.get('signature')
+        if client and DocumentSignature.objects.filter(document=document, client=client).exists():
+            return Response({'detail': 'Вы уже подписали этот документ'}, status=status.HTTP_400_BAD_REQUEST)
+        if not client and client_email and DocumentSignature.objects.filter(document=document, client_email=client_email, client=None).exists():
+            return Response({'detail': 'Вы уже подписали этот документ'}, status=status.HTTP_400_BAD_REQUEST)
+
+        signature = request.data.get('signature') or f'SIGNED:{client_email}'
         cert_info = request.data.get('certificate_info', {})
-        if not signature:
-            return Response({'detail': 'Signature is required'}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            verify_ncalayer_signature(signature, request.data.get('signed_data'), cert_info)
-        except Exception:
-            pass
+        if request.data.get('signature'):
+            try:
+                verify_ncalayer_signature(signature, request.data.get('signed_data'), cert_info)
+            except Exception:
+                pass
 
         sig = DocumentSignature.objects.create(
             document=document,
-            client=request.user,
-            client_email=request.user.email,
+            client=client,
+            client_email=client_email,
             signature=signature,
         )
         return Response({
             'detail': 'Document signed successfully',
+            'signature': DocumentSignatureSerializer(sig).data,
+            'document': DocumentSerializer(document, context={'request': request}).data,
+        })
+
+    # ── SMS OTP signing ───────────────────────────────────────────────────────
+
+    @action(detail=False, methods=['post'],
+            url_path='public/(?P<uuid>[^/.]+)/verify-phone',
+            permission_classes=[permissions.AllowAny])
+    def verify_phone(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        if not document.client_phone:
+            return Response({'detail': 'Phone verification not configured for this document'}, status=status.HTTP_400_BAD_REQUEST)
+
+        phone = re.sub(r'\D', '', request.data.get('phone', ''))
+        stored = re.sub(r'\D', '', document.client_phone)
+
+        if phone[-10:] != stored[-10:]:
+            return Response({'detail': 'Номер телефона не совпадает'}, status=status.HTTP_400_BAD_REQUEST)
+
+        code = str(random.randint(100000, 999999))
+        expires = timezone.now() + timedelta(minutes=10)
+        document.otp_sessions.filter(is_used=False).update(is_used=True)
+        OTPSession.objects.create(document=document, phone=phone, code=code, expires_at=expires)
+
+        send_sms(f'+{phone}', f'Ваш код для подписания договора OneContract: {code}. Действителен 10 минут.')
+
+        from django.conf import settings as djsettings
+        resp = {'detail': 'Код отправлен на ваш номер'}
+        if getattr(djsettings, 'SMS_DEBUG', True):
+            resp['debug_code'] = code
+        return Response(resp)
+
+    @action(detail=False, methods=['post'],
+            url_path='public/(?P<uuid>[^/.]+)/confirm-otp',
+            permission_classes=[permissions.AllowAny])
+    def confirm_otp(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        phone = re.sub(r'\D', '', request.data.get('phone', ''))
+        code = request.data.get('code', '').strip()
+        email = request.data.get('email', '')
+
+        try:
+            otp = document.otp_sessions.filter(
+                is_used=False,
+                expires_at__gt=timezone.now(),
+            ).filter(phone__endswith=phone[-10:]).latest('created_at')
+        except OTPSession.DoesNotExist:
+            return Response({'detail': 'Неверный или истёкший код'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if otp.code != code:
+            return Response({'detail': 'Неверный код'}, status=status.HTTP_400_BAD_REQUEST)
+
+        otp.is_used = True
+        otp.save()
+
+        client = request.user if request.user.is_authenticated else None
+        sig = DocumentSignature.objects.create(
+            document=document,
+            client=client,
+            client_email=client.email if client else email,
+            signature=f'OTP:{phone}:{timezone.now().isoformat()}',
+        )
+        return Response({
+            'detail': 'Документ успешно подписан',
             'signature': DocumentSignatureSerializer(sig).data,
             'document': DocumentSerializer(document, context={'request': request}).data,
         })

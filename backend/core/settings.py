@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import dj_database_url
 from decouple import config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -93,17 +94,10 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# Database — auto-switch: D1 on Cloudflare, SQLite locally
-USE_D1 = config('USE_D1', default='False') == 'True'
+DATABASE_URL = config('DATABASE_URL', default='')
 
-if USE_D1:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django_cf.db.backends.d1',
-            'NAME': 'onecontract',
-        }
-    }
-    DEFAULT_FILE_STORAGE = 'django_cf.storage.R2Storage'
+if DATABASE_URL:
+    DATABASES = {'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
 else:
     DATABASES = {
         'default': {
@@ -111,8 +105,9 @@ else:
             'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
-    MEDIA_ROOT = BASE_DIR / 'media'
-    MEDIA_URL = '/media/'
+
+MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = '/media/'
 
 
 # Password validation
@@ -227,28 +222,8 @@ AUTH_USER_MODEL = 'users.User'
 
 SOCIALACCOUNT_PROVIDERS = {
     'google': {
-        'SCOPE': [
-            'profile',
-            'email',
-        ],
-        'AUTH_PARAMS': {
-            'access_type': 'online',
-        }
-    },
-    'facebook': {
-        'METHOD': 'oauth2',
-        'SCOPE': ['email', 'public_profile'],
-        'AUTH_PARAMS': {'auth_type': 'reauthenticate'},
-        'FIELDS': [
-            'id',
-            'first_name',
-            'last_name',
-            'middle_name',
-            'name',
-            'name_format',
-            'picture',
-            'email'
-        ]
+        'SCOPE': ['profile', 'email'],
+        'AUTH_PARAMS': {'access_type': 'online'},
     }
 }
 
@@ -256,11 +231,27 @@ ACCOUNT_AUTHENTICATION_METHOD = 'email'
 ACCOUNT_EMAIL_REQUIRED = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
 
-# OAuth Credentials from environment
+# URLs
+BACKEND_URL = config('BACKEND_URL', default='http://localhost:8000')
+FRONTEND_URL = config('FRONTEND_URL', default='http://localhost:5174')
+
+# Google OAuth
 GOOGLE_CLIENT_ID = config('GOOGLE_CLIENT_ID', default='')
 GOOGLE_CLIENT_SECRET = config('GOOGLE_CLIENT_SECRET', default='')
-FACEBOOK_APP_ID = config('FACEBOOK_APP_ID', default='')
-FACEBOOK_APP_SECRET = config('FACEBOOK_APP_SECRET', default='')
+GOOGLE_REDIRECT_URI = config('GOOGLE_REDIRECT_URI', default=f'{BACKEND_URL}/accounts/google/login/callback/')
+
+# Email (Gmail SMTP)
+EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = config('EMAIL_HOST', default='smtp.gmail.com')
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='OneContract <onecontract.main@gmail.com>')
+
+# SMS
+SMS_DEBUG = config('SMS_DEBUG', default=True, cast=bool)
+MOBIZON_API_KEY = config('MOBIZON_API_KEY', default='')
 
 # Groq API Key
 GROQ_API_KEY = config('GROQ_API_KEY', default='')

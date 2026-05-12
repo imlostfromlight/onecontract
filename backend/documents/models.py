@@ -38,11 +38,29 @@ class Document(models.Model):
     client_fields = models.JSONField(default=list, blank=True)
     manager_fields = models.JSONField(default=dict, blank=True)
 
+    # Phone-based signing: manager sets client phone, verified by SMS OTP
+    client_phone = models.CharField(max_length=20, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"{self.title} ({self.status})"
+
+
+class OTPSession(models.Model):
+    document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='otp_sessions')
+    phone = models.CharField(max_length=20)
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"OTP {self.document_id} {self.phone}"
 
 
 class DocumentSignature(models.Model):
