@@ -8,6 +8,8 @@ urlpatterns = [
     path('auth/register/', views.register, name='register'),
     path('auth/fast-login/', views.fast_login, name='fast_login'),
     path('auth/user/', views.get_user_info, name='get_user_info'),
+    path('auth/profile/', views.update_profile, name='update_profile'),
+    path('auth/change-password/', views.change_password, name='change_password'),
 
     # Email verification & password reset
     path('auth/verify-email/<str:token>/', views.verify_email, name='verify_email'),

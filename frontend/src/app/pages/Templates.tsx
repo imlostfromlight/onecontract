@@ -156,7 +156,7 @@ export function Templates() {
   const [createdDoc, setCreatedDoc] = useState<CreatedDoc | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const isAllowed = user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN' || user?.role === 'MANAGER';
+  const isAllowed = !!token;
 
   useEffect(() => { fetchTemplates(); }, [token]);
 

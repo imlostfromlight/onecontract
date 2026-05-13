@@ -245,9 +245,38 @@ def ecp_authenticate(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_info(request):
-    """Get current authenticated user info"""
     serializer = UserSerializer(request.user)
     return Response(serializer.data)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_profile(request):
+    user = request.user
+    first_name = request.data.get('first_name', '').strip()
+    last_name = request.data.get('last_name', '').strip()
+    if first_name:
+        user.first_name = first_name
+    if last_name is not None:
+        user.last_name = last_name
+    user.save(update_fields=['first_name', 'last_name'])
+    return Response(UserSerializer(user).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    user = request.user
+    old_password = request.data.get('old_password', '')
+    new_password = request.data.get('new_password', '')
+    if not user.check_password(old_password):
+        return Response({'detail': 'Неверный текущий пароль'}, status=status.HTTP_400_BAD_REQUEST)
+    if len(new_password) < 6:
+        return Response({'detail': 'Минимум 6 символов'}, status=status.HTTP_400_BAD_REQUEST)
+    user.set_password(new_password)
+    user.save(update_fields=['password'])
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({'detail': 'Пароль изменён', 'token': token.key})
 
 
 @api_view(['POST'])

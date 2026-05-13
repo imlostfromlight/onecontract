@@ -12,7 +12,7 @@ function getOrgId(user: any): string {
 }
 
 // GET /api/documents/templates/
-templates.get('/', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+templates.get('/', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const rows = user.role === 'SUPERADMIN'
     ? (await c.env.DB.prepare('SELECT * FROM templates ORDER BY created_at DESC').all<any>()).results
@@ -24,7 +24,7 @@ templates.get('/', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAG
 });
 
 // POST /api/documents/templates/ — accepts file upload OR plain-text content
-templates.post('/', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+templates.post('/', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const form = await c.req.formData();
   const file = form.get('file') as File | null;
@@ -71,7 +71,7 @@ templates.post('/', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANA
 });
 
 // DELETE /api/documents/templates/:id
-templates.delete('/:id', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+templates.delete('/:id', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const tmpl = await c.env.DB.prepare('SELECT * FROM templates WHERE id = ?')
     .bind(c.req.param('id')).first<any>();
@@ -85,7 +85,7 @@ templates.delete('/:id', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 
 });
 
 // POST /api/documents/templates/:id/use
-templates.post('/:id/use', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+templates.post('/:id/use', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const orgId = getOrgId(user);
 
@@ -155,7 +155,7 @@ templates.get('/:id/file', requireAuth, async (c) => {
 });
 
 // GET /api/documents/templates/:id/text — returns editable text content
-templates.get('/:id/text', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+templates.get('/:id/text', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const tmpl = await c.env.DB.prepare('SELECT * FROM templates WHERE id = ?')
     .bind(c.req.param('id')).first<any>();
@@ -178,7 +178,7 @@ templates.get('/:id/text', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN'
 });
 
 // PUT /api/documents/templates/:id/text — update template from text editor
-templates.put('/:id/text', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+templates.put('/:id/text', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const tmpl = await c.env.DB.prepare('SELECT * FROM templates WHERE id = ?')
     .bind(c.req.param('id')).first<any>();

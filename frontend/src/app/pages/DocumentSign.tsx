@@ -222,7 +222,7 @@ export function DocumentSign() {
     };
 
 
-    const isOrg = user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN' || user?.role === 'MANAGER';
+    const isOrg = !!token;
 
     return (
         <div className="flex flex-col min-h-screen bg-background text-foreground">

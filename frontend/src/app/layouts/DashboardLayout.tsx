@@ -8,11 +8,8 @@ import {
     Settings,
     LogOut,
     Menu,
-    X,
     Bell,
     Search,
-    Plus,
-    Shield
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
@@ -28,20 +25,11 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
     };
 
     const navItems = [
-        { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-        { label: 'My Contracts', icon: FileText, href: '/documents' },
-        // Show 'Templates' only for Org/Admin
-        ...(user?.role === 'ORGANIZATION' || user?.role === 'SUPERADMIN' || user?.role === 'ADMIN' ? [
-            { label: 'Templates', icon: FileText, href: '/templates' },
-            { label: 'Contacts', icon: Users, href: '/contacts' },
-        ] : []),
-
-        // Admin Panel Link
-        ...(user?.role === 'SUPERADMIN' ? [
-            { label: 'Admin Panel', icon: Shield, href: '/admin' }
-        ] : []),
-
-        { label: 'Settings', icon: Settings, href: '/settings' },
+        { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard', disabled: false },
+        { label: 'My Contracts', icon: FileText, href: '/documents', disabled: false },
+        { label: 'Templates', icon: FileText, href: '/templates', disabled: false },
+        { label: 'Contacts', icon: Users, href: '/contacts', disabled: true },
+        { label: 'Settings', icon: Settings, href: '/settings', disabled: false },
     ];
 
     return (
@@ -71,6 +59,17 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                     <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
                         {navItems.map((item) => {
                             const isActive = location.pathname === item.href;
+                            if (item.disabled) {
+                                return (
+                                    <span
+                                        key={item.href}
+                                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 cursor-not-allowed select-none"
+                                    >
+                                        <item.icon className="w-5 h-5 text-gray-300" />
+                                        {item.label}
+                                    </span>
+                                );
+                            }
                             return (
                                 <Link
                                     key={item.href}

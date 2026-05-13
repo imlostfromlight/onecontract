@@ -163,7 +163,7 @@ docs.get('/', requireAuth, async (c) => {
 });
 
 // ── Upload document ───────────────────────────────────────────────────────────
-docs.post('/', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+docs.post('/', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const orgId = getOrgId(user);
   const form = await c.req.formData();
@@ -197,7 +197,7 @@ docs.get('/:id', requireAuth, async (c) => {
 });
 
 // ── Delete document ───────────────────────────────────────────────────────────
-docs.delete('/:id', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+docs.delete('/:id', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const orgId = getOrgId(user);
   const doc = await c.env.DB.prepare('SELECT * FROM documents WHERE id = ?')
@@ -212,7 +212,7 @@ docs.delete('/:id', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANA
 });
 
 // ── Org sign ─────────────────────────────────────────────────────────────────
-docs.post('/:id/org_sign', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+docs.post('/:id/org_sign', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const orgId = getOrgId(user);
   const doc = await c.env.DB.prepare(
@@ -230,7 +230,7 @@ docs.post('/:id/org_sign', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN'
 });
 
 // ── Close document ────────────────────────────────────────────────────────────
-docs.post('/:id/close', requireAuth, requireRole('ORGANIZATION', 'SUPERADMIN', 'MANAGER'), async (c) => {
+docs.post('/:id/close', requireAuth, requireAuth, async (c) => {
   const user = c.get('user');
   const orgId = getOrgId(user);
   const doc = await c.env.DB.prepare(

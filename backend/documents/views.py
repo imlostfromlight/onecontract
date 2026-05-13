@@ -32,8 +32,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_permissions(self):
-        permission_classes = [permissions.IsAuthenticated, IsOrganization | IsSuperAdmin]
-        return [permission() for permission in permission_classes]
+        return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user
@@ -97,17 +96,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_permissions(self):
-        if self.action in ['public_retrieve', 'public_summarize', 'public_fill', 'public_file']:
-            permission_classes = [permissions.AllowAny]
-        elif self.action == 'public_sign':
-            permission_classes = [permissions.IsAuthenticated]
-        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
-            permission_classes = [permissions.IsAuthenticated, IsOrganization | IsSuperAdmin]
-        elif self.action == 'org_sign':
-            permission_classes = [permissions.IsAuthenticated, IsOrganization | IsSuperAdmin]
-        else:
-            permission_classes = [permissions.IsAuthenticated]
-        return [permission() for permission in permission_classes]
+        if self.action in ['public_retrieve', 'public_summarize', 'public_fill', 'public_file', 'public_sign', 'verify_phone', 'confirm_otp']:
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user
@@ -301,6 +292,76 @@ class DocumentViewSet(viewsets.ModelViewSet):
             'detail': 'Документ успешно подписан',
             'signature': DocumentSignatureSerializer(sig).data,
             'document': DocumentSerializer(document, context={'request': request}).data,
+        })
+
+    # ── ECP (NCALayer) signing ────────────────────────────────────────────────
+
+    @action(detail=False, methods=['post'],
+            url_path='public/(?P<uuid>[^/.]+)/sign-ecp',
+            permission_classes=[permissions.AllowAny])
+    def sign_ecp(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Документ не найден'}, status=status.HTTP_404_NOT_FOUND)
+        if document.status == 'CLOSED':
+            return Response({'detail': 'Документ закрыт'}, status=status.HTTP_400_BAD_REQUEST)
+
+        signature_key = request.data.get('signature_key', '')
+        signed_data = request.data.get('signed_data', '')
+        email = request.data.get('email', '')
+
+        if not signature_key:
+            return Response({'detail': 'Подпись отсутствует'}, status=status.HTTP_400_BAD_REQUEST)
+
+        iin = ''
+        try:
+            verified = verify_ncalayer_signature(signature_key, signed_data, {})
+            if verified:
+                iin = verified.get('iin', '')
+                email = email or verified.get('email', '')
+        except Exception:
+            pass
+
+        signer_email = email or (f'{iin}@ncalayer' if iin else '')
+        sig = DocumentSignature.objects.create(
+            document=document,
+            client=None,
+            client_email=signer_email,
+            signature=f'ECP:{iin}:{signature_key[:80]}',
+        )
+        return Response({
+            'detail': 'Документ подписан через ЭЦП',
+            'signature': DocumentSignatureSerializer(sig).data,
+        })
+
+    # ── eGov QR signing ───────────────────────────────────────────────────────
+
+    @action(detail=False, methods=['post'],
+            url_path='public/(?P<uuid>[^/.]+)/sign-egov',
+            permission_classes=[permissions.AllowAny])
+    def sign_egov(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Документ не найден'}, status=status.HTTP_404_NOT_FOUND)
+        if document.status == 'CLOSED':
+            return Response({'detail': 'Документ закрыт'}, status=status.HTTP_400_BAD_REQUEST)
+
+        iin = request.data.get('iin', '')
+        email = request.data.get('email', '') or (f'{iin}@egov.kz' if iin else '')
+        if not email:
+            return Response({'detail': 'Не получены данные подписанта'}, status=status.HTTP_400_BAD_REQUEST)
+
+        sig = DocumentSignature.objects.create(
+            document=document,
+            client=None,
+            client_email=email,
+            signature=f'EGOV_QR:{iin}',
+        )
+        return Response({
+            'detail': 'Документ подписан через eGov QR',
+            'signature': DocumentSignatureSerializer(sig).data,
         })
 
     # ── Org signature ─────────────────────────────────────────────────────────
