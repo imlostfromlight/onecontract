@@ -323,14 +323,15 @@ class DocumentViewSet(viewsets.ModelViewSet):
         except Document.DoesNotExist:
             return Response({'detail': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        if not document.client_phone:
-            return Response({'detail': 'Phone verification not configured for this document'}, status=status.HTTP_400_BAD_REQUEST)
-
         phone = re.sub(r'\D', '', request.data.get('phone', ''))
-        stored = re.sub(r'\D', '', document.client_phone)
+        if not phone:
+            return Response({'detail': 'Укажите номер телефона'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if phone[-10:] != stored[-10:]:
-            return Response({'detail': 'Номер телефона не совпадает'}, status=status.HTTP_400_BAD_REQUEST)
+        # If manager pre-set a phone, verify client matches it
+        if document.client_phone:
+            stored = re.sub(r'\D', '', document.client_phone)
+            if phone[-10:] != stored[-10:]:
+                return Response({'detail': 'Номер телефона не совпадает'}, status=status.HTTP_400_BAD_REQUEST)
 
         from django.conf import settings as djsettings
         code = otp_send(f'+{phone}')
