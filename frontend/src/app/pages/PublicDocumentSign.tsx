@@ -252,7 +252,7 @@ export function PublicDocumentSign() {
   const formValid = normalizedFields.every(f => clientValues[f.name]?.trim()) && agreed1 && agreed2;
   const hasPhone = !!document?.client_phone;
   const allowedMethods = document?.signing_methods?.length ? document.signing_methods : ['sms', 'ecp', 'egov'];
-  const showSms = allowedMethods.includes('sms') && hasPhone;
+  const showSms = allowedMethods.includes('sms');
   const showEcp = allowedMethods.includes('ecp');
   const showEgov = allowedMethods.includes('egov');
 
@@ -554,8 +554,9 @@ export function PublicDocumentSign() {
                       {sigexSession.launch_link && (
                         <a
                           href={sigexSession.launch_link}
-                          className="mt-2 inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-[#0F52BA] text-white text-sm font-medium rounded-xl hover:bg-[#0D47A1] transition-colors md:hidden"
+                          className="mt-2 inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-[#0F52BA] text-white text-sm font-medium rounded-xl hover:bg-[#0D47A1] transition-colors"
                         >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
                           Открыть в eGov Mobile
                         </a>
                       )}

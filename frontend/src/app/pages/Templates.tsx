@@ -20,8 +20,8 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
 ];
 
 interface FieldState { name: string; type: FieldType; isClient: boolean; value: string; }
-interface Template { id: number; title: string; description: string; file: string; file_name: string; template_fields: string[]; created_at: string; }
-interface UseTemplateModal { template: Template; docTitle: string; fields: FieldState[]; clientPhone?: string; }
+interface Template { id: number; title: string; description: string; file: string; file_name: string; template_fields: string[]; signing_methods: string[]; created_at: string; }
+interface UseTemplateModal { template: Template; docTitle: string; fields: FieldState[]; clientPhone?: string; signingMethods: string[]; }
 interface CreatedDoc { uuid: string; title: string; }
 
 /* ── Helpers ── */
@@ -144,6 +144,7 @@ export function Templates() {
       docTitle: tmpl.title,
       fields: tmpl.template_fields.map(name => ({ name, type: autoType(name), isClient: true, value: '' })),
       clientPhone: '',
+      signingMethods: tmpl.signing_methods?.length ? tmpl.signing_methods : ['sms', 'ecp', 'egov'],
     });
     setCreatedDoc(null);
   };
@@ -165,7 +166,7 @@ export function Templates() {
       const res = await fetch(`${API_BASE}/api/documents/templates/${modal.template.id}/use/`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: modal.docTitle, fields: managerFields, client_fields: clientFields, client_phone: modal.clientPhone || '' }),
+        body: JSON.stringify({ title: modal.docTitle, fields: managerFields, client_fields: clientFields, client_phone: modal.clientPhone || '', signing_methods: modal.signingMethods }),
       });
       if (!res.ok) throw new Error((await res.json()).detail || 'Ошибка');
       const doc = await res.json();
@@ -575,6 +576,26 @@ function TemplateWizard({ modal, setModal, updateField, handleUseTemplate, submi
                         placeholder="+7 (___) ___-__-__" className={inputCls} />
                       <p className="text-[10px] text-[#A6C5D7] mt-1.5">Клиент введёт этот номер для подтверждения перед подписанием</p>
                     </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-2">Способы подписания</label>
+                      <div className="space-y-2">
+                        {SIGN_METHODS.map((m: any) => {
+                          const active = modal.signingMethods?.includes(m.id);
+                          return (
+                            <label key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${active ? 'border-[#0F52BA] bg-[#D6E6F3]/30' : 'border-[#D6E6F3] hover:border-[#A6C5D7]'}`}>
+                              <input type="checkbox" checked={!!active} onChange={() => {
+                                const cur = modal.signingMethods || [];
+                                setModal({ ...modal, signingMethods: active ? cur.filter((x: string) => x !== m.id) : [...cur, m.id] });
+                              }} className="w-4 h-4 accent-[#0F52BA]" />
+                              <div>
+                                <p className="text-sm font-semibold text-[#0D1B2A]">{m.label}</p>
+                                <p className="text-xs text-[#6B7E92]">{m.desc}</p>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                     {modal.fields.length === 0 && (
                       <div className="bg-[#F8FAFC] border border-[#D6E6F3] rounded-xl px-4 py-3 text-sm text-[#6B7E92]">
                         Шаблон не содержит переменных — договор будет создан как есть.
@@ -651,6 +672,7 @@ function TemplateWizard({ modal, setModal, updateField, handleUseTemplate, submi
                         ['Название', modal.docTitle],
                         ['Полей клиента', modal.fields.filter((f: FieldState) => f.isClient).length],
                         ['SMS верификация', modal.clientPhone || 'не указан'],
+                        ['Способы подписания', (modal.signingMethods || []).map((m: string) => ({ sms: 'SMS', ecp: 'ЭЦП', egov: 'eGov' }[m] || m)).join(', ') || 'не выбраны'],
                       ].map(([label, value]) => (
                         <div key={String(label)} className="flex justify-between text-sm py-1.5 border-b border-[#D6E6F3] last:border-0">
                           <span className="text-[#6B7E92]">{label}</span>
