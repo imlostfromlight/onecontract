@@ -30,12 +30,23 @@ def create_signing_session(title: str, file_b64: str = None, file_mime: str = '@
     r.raise_for_status()
     data = r.json()
 
+    logger.info(f'Sigex egovQr response keys: {list(data.keys())}')
+    logger.info(f'Sigex eGovMobileLaunchLink: {data.get("eGovMobileLaunchLink")}')
+
     data_url = data['dataURL']
     sign_url = data['signURL']
     qr_code = data['qrCode']  # base64-encoded PNG
     expire_at = data['expireAt']
 
     qr_id = data_url.rstrip('/').split('/')[-1]
+
+    # Build launch link: prefer Sigex-provided, fallback to web URL the app can open
+    launch_link = (
+        data.get('eGovMobileLaunchLink')
+        or data.get('launchLink')
+        or data.get('mobileLink')
+        or f'https://sigex.kz/sign/{qr_id}'
+    )
 
     doc = {'id': 1, 'nameRu': title, 'nameKz': title, 'nameEn': title}
     if file_b64:
@@ -54,7 +65,7 @@ def create_signing_session(title: str, file_b64: str = None, file_mime: str = '@
         'id': qr_id,
         'qr_image': qr_code,
         'expire_at': expire_at,
-        'launch_link': data.get('eGovMobileLaunchLink', ''),
+        'launch_link': launch_link,
     }
 
 

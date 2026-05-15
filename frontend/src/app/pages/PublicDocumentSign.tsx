@@ -542,6 +542,23 @@ export function PublicDocumentSign() {
 
                   {sigexStatus === 'WAITING' && sigexSession && (
                     <div className="flex flex-col items-center gap-4">
+                      {/* Mobile: show launch link button prominently */}
+                      {sigexSession.launch_link && (
+                        <a
+                          href={sigexSession.launch_link}
+                          className="inline-flex items-center justify-center gap-2 w-full px-4 py-3 bg-[#0F52BA] text-white text-sm font-semibold rounded-xl hover:bg-[#0D47A1] transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                          Открыть в eGov Mobile
+                        </a>
+                      )}
+                      {/* Divider */}
+                      <div className="flex items-center gap-3 w-full">
+                        <div className="flex-1 h-px bg-[#D6E6F3]" />
+                        <span className="text-xs text-[#A6C5D7]">или сканируйте QR-код</span>
+                        <div className="flex-1 h-px bg-[#D6E6F3]" />
+                      </div>
+                      {/* QR for desktop */}
                       <div className="bg-white p-4 rounded-xl border-2 border-[#D6E6F3] shadow-sm">
                         <img
                           src={`data:image/png;base64,${sigexSession.qr_image}`}
@@ -550,16 +567,7 @@ export function PublicDocumentSign() {
                           height={200}
                         />
                       </div>
-                      <p className="text-xs text-[#6B7E92] text-center">Сканируйте QR через eGov Mobile и подтвердите подписание</p>
-                      {sigexSession.launch_link && (
-                        <a
-                          href={sigexSession.launch_link}
-                          className="mt-2 inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-[#0F52BA] text-white text-sm font-medium rounded-xl hover:bg-[#0D47A1] transition-colors"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
-                          Открыть в eGov Mobile
-                        </a>
-                      )}
+                      <p className="text-xs text-[#6B7E92] text-center">Сканируйте QR-код камерой телефона через приложение eGov Mobile</p>
                     </div>
                   )}
 
