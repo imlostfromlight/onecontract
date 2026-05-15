@@ -30,8 +30,9 @@ def create_signing_session(title: str, file_b64: str = None, file_mime: str = '@
     r.raise_for_status()
     data = r.json()
 
-    logger.info(f'Sigex egovQr response keys: {list(data.keys())}')
-    logger.info(f'Sigex eGovMobileLaunchLink: {data.get("eGovMobileLaunchLink")}')
+    print(f'[SIGEX] keys: {list(data.keys())}')
+    print(f'[SIGEX] eGovMobileLaunchLink: {data.get("eGovMobileLaunchLink")}')
+    print(f'[SIGEX] eGovBusinessLaunchLink: {data.get("eGovBusinessLaunchLink")}')
 
     data_url = data['dataURL']
     sign_url = data['signURL']
