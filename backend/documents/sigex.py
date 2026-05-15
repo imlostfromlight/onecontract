@@ -75,12 +75,14 @@ def get_session_status(session_id: str) -> dict:
         return {'status': 'EXPIRED'}
 
     try:
-        r = requests.get(cached['sign_url'], timeout=10)
+        r = requests.get(cached['sign_url'], timeout=5)
         r.raise_for_status()
         data = r.json()
+    except requests.exceptions.Timeout:
+        return {'status': 'WAITING'}
     except Exception as e:
         logger.error(f'Sigex status error: {e}')
-        return {'status': 'ERROR'}
+        return {'status': 'WAITING'}
 
     if data.get('status') == 'CANCELED':
         return {'status': 'CANCELED'}
