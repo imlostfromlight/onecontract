@@ -321,15 +321,28 @@ function TemplateCard({ template, onUse, onDelete }: { template: Template; onUse
 }
 
 /* ── Upload Modal ── */
+const SIGN_METHODS = [
+  { id: 'sms', label: 'SMS-код', desc: 'Подтверждение по номеру телефона' },
+  { id: 'ecp', label: 'ЭЦП (NCALayer)', desc: 'Электронная цифровая подпись' },
+  { id: 'egov', label: 'eGov Mobile', desc: 'QR-код через приложение eGov' },
+];
+
 function UploadModal({ token, onClose, onCreated }: { token: string | null; onClose: () => void; onCreated: (t: Template) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [signingMethods, setSigningMethods] = useState<string[]>(['sms', 'ecp', 'egov']);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+
+  const toggleMethod = (id: string) => {
+    setSigningMethods(prev =>
+      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    );
+  };
 
   const handleFile = async (f: File) => {
     setFile(f);
@@ -360,6 +373,7 @@ function UploadModal({ token, onClose, onCreated }: { token: string | null; onCl
     fd.append('file', file);
     fd.append('title', title || file.name);
     fd.append('description', description);
+    fd.append('signing_methods', JSON.stringify(signingMethods));
     try {
       const res = await fetch(`${API_BASE}/api/documents/templates/`, {
         method: 'POST',
@@ -422,6 +436,21 @@ function UploadModal({ token, onClose, onCreated }: { token: string | null; onCl
           <div>
             <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-1.5">Описание</label>
             <input value={description} onChange={e => setDescription(e.target.value)} placeholder="Краткое описание (необязательно)" className={inputCls} />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-2">Способы подписания</label>
+            <div className="space-y-2">
+              {SIGN_METHODS.map(m => (
+                <label key={m.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${signingMethods.includes(m.id) ? 'border-[#0F52BA] bg-[#D6E6F3]/30' : 'border-[#D6E6F3] hover:border-[#A6C5D7]'}`}>
+                  <input type="checkbox" checked={signingMethods.includes(m.id)} onChange={() => toggleMethod(m.id)} className="w-4 h-4 accent-[#0F52BA]" />
+                  <div>
+                    <p className="text-sm font-semibold text-[#0D1B2A]">{m.label}</p>
+                    <p className="text-xs text-[#6B7E92]">{m.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
 
           {error && (

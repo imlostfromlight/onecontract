@@ -10,6 +10,8 @@ class Template(models.Model):
     file = models.FileField(upload_to='templates/')
     # Auto-extracted list of {{placeholder}} names found in the DOCX
     template_fields = models.JSONField(default=list, blank=True)
+    # Allowed signing methods: ['sms', 'ecp', 'egov'] — empty means all allowed
+    signing_methods = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -40,6 +42,8 @@ class Document(models.Model):
 
     # Phone-based signing: manager sets client phone, verified by SMS OTP
     client_phone = models.CharField(max_length=20, blank=True)
+    # Allowed signing methods inherited from template: ['sms', 'ecp', 'egov']
+    signing_methods = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

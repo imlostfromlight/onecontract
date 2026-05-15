@@ -22,7 +22,7 @@ class TemplateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Template
-        fields = ['id', 'title', 'description', 'file', 'file_name', 'template_fields', 'created_at']
+        fields = ['id', 'title', 'description', 'file', 'file_name', 'template_fields', 'signing_methods', 'created_at']
         read_only_fields = ['created_at', 'organization', 'template_fields']
 
     def get_file_name(self, obj):
@@ -65,7 +65,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'file', 'file_name', 'status', 'created_at', 'uuid', 'template',
             'org_signature', 'org_signed_at', 'client_fields', 'manager_fields', 'client_phone',
-            'signatures', 'signature_count',
+            'signing_methods', 'signatures', 'signature_count',
         ]
         read_only_fields = ['status', 'created_at', 'user', 'org_signature', 'org_signed_at', 'signatures']
 
