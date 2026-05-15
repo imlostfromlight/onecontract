@@ -1,0 +1,262 @@
+[
+{
+  "model": "sites.site",
+  "fields": {
+    "domain": "example.com",
+    "name": "example.com"
+  }
+},
+{
+  "model": "users.user",
+  "fields": {
+    "password": "",
+    "last_login": null,
+    "is_superuser": false,
+    "is_staff": false,
+    "is_active": true,
+    "username": "nadyrkhans",
+    "email": "nadyrkhans@gmail.com",
+    "first_name": "Shyntemir",
+    "last_name": "",
+    "date_joined": "2026-05-14T13:52:52.487Z",
+    "role": "ORGANIZATION",
+    "signature_key": null,
+    "certificate_serial": null,
+    "certificate_issuer": null,
+    "certificate_subject": null,
+    "is_ecp_verified": false,
+    "ecp_verification_date": null,
+    "is_email_verified": false,
+    "email_verify_token": "",
+    "password_reset_token": "",
+    "password_reset_expires": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.user",
+  "fields": {
+    "password": "pbkdf2_sha256$1200000$9H1PVQpXACxtjLSDdpdD1Z$fReGnWGx8mFlrEtfDz+z1msKdFHcrlMwqiVhJcLcXZA=",
+    "last_login": null,
+    "is_superuser": false,
+    "is_staff": false,
+    "is_active": true,
+    "username": "shantinuri123",
+    "email": "shantinuri123@gmail.com",
+    "first_name": "1",
+    "last_name": "",
+    "date_joined": "2026-05-12T11:18:26.227Z",
+    "role": "ORGANIZATION",
+    "signature_key": null,
+    "certificate_serial": null,
+    "certificate_issuer": null,
+    "certificate_subject": null,
+    "is_ecp_verified": false,
+    "ecp_verification_date": null,
+    "is_email_verified": false,
+    "email_verify_token": "-IatIiF8IAPXsVuaa-VC_Ix0yIoNxoYN5qGwU5DBSV0",
+    "password_reset_token": "",
+    "password_reset_expires": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "users.user",
+  "fields": {
+    "password": "pbkdf2_sha256$1200000$9d9YZ8qT2EOFrDJWuQsSz6$TGA8ujJYItqGJlWJKB1nu5sRIF5SIbG6CmVZq4KLYKc=",
+    "last_login": null,
+    "is_superuser": false,
+    "is_staff": false,
+    "is_active": true,
+    "username": "ivan",
+    "email": "ivan@test.com",
+    "first_name": "ivan",
+    "last_name": "",
+    "date_joined": "2026-05-14T15:33:45.638Z",
+    "role": "ORGANIZATION",
+    "signature_key": null,
+    "certificate_serial": null,
+    "certificate_issuer": null,
+    "certificate_subject": null,
+    "is_ecp_verified": false,
+    "ecp_verification_date": null,
+    "is_email_verified": false,
+    "email_verify_token": "f4E0J_ItwCh0CSNgZRRjnwI6ibtyfeUTouXan7UtH5w",
+    "password_reset_token": "",
+    "password_reset_expires": null,
+    "groups": [],
+    "user_permissions": []
+  }
+},
+{
+  "model": "documents.template",
+  "pk": 1,
+  "fields": {
+    "organization": [
+      "shantinuri123"
+    ],
+    "title": "sa",
+    "description": "asd",
+    "file": "templates/Договор_Сабақ_онлаин_рус_Sa14PwD.docx",
+    "template_fields": [
+      "ИИН",
+      "Имя",
+      "Отчество",
+      "Фамилия",
+      "номер_договора"
+    ],
+    "created_at": "2026-05-12T11:18:54.024Z",
+    "updated_at": "2026-05-12T11:18:54.024Z"
+  }
+},
+{
+  "model": "documents.template",
+  "pk": 2,
+  "fields": {
+    "organization": [
+      "shantinuri123"
+    ],
+    "title": "As",
+    "description": "",
+    "file": "templates/Договор_Сабақ_онлаин_рус_Ecn5d0L.docx",
+    "template_fields": [
+      "ИИН",
+      "Имя",
+      "Отчество",
+      "Фамилия",
+      "номер_договора"
+    ],
+    "created_at": "2026-05-13T03:55:09.173Z",
+    "updated_at": "2026-05-13T03:55:09.173Z"
+  }
+},
+{
+  "model": "documents.template",
+  "pk": 3,
+  "fields": {
+    "organization": [
+      "nadyrkhans"
+    ],
+    "title": "Договор Сабақ онлайн рус.docx",
+    "description": "",
+    "file": "templates/Договор_Сабақ_онлаин_рус_luaqF6m.docx",
+    "template_fields": [
+      "ИИН",
+      "Имя",
+      "Отчество",
+      "Фамилия",
+      "номер_договора"
+    ],
+    "created_at": "2026-05-14T13:53:37.959Z",
+    "updated_at": "2026-05-14T13:53:37.959Z"
+  }
+},
+{
+  "model": "documents.document",
+  "pk": 1,
+  "fields": {
+    "user": [
+      "shantinuri123"
+    ],
+    "template": 1,
+    "uuid": "31ed99b1-a27f-462e-ac1e-d38c7fb6cee8",
+    "title": "sa",
+    "file": "documents/Договор_Сабақ_онлаин_рус_Sa14PwD_ls4n16j.docx",
+    "status": "DRAFT",
+    "org_signature": null,
+    "org_signed_at": null,
+    "client_fields": [],
+    "manager_fields": {
+      "номер_договора": "12345"
+    },
+    "client_phone": "",
+    "created_at": "2026-05-12T11:19:22.421Z",
+    "updated_at": "2026-05-12T11:20:05.488Z"
+  }
+},
+{
+  "model": "documents.document",
+  "pk": 2,
+  "fields": {
+    "user": [
+      "shantinuri123"
+    ],
+    "template": 2,
+    "uuid": "57786b2a-c29a-4e4d-a456-9cc7349790d5",
+    "title": "As",
+    "file": "documents/Договор_Сабақ_онлаин_рус_Ecn5d0L_4Mvamvb.docx",
+    "status": "DRAFT",
+    "org_signature": null,
+    "org_signed_at": null,
+    "client_fields": [],
+    "manager_fields": {},
+    "client_phone": "",
+    "created_at": "2026-05-13T03:55:20.997Z",
+    "updated_at": "2026-05-13T03:55:48.295Z"
+  }
+},
+{
+  "model": "documents.document",
+  "pk": 3,
+  "fields": {
+    "user": [
+      "nadyrkhans"
+    ],
+    "template": 3,
+    "uuid": "880ef74b-35aa-4080-8b02-2aed56171afa",
+    "title": "Договор Сабақ онлайн рус.docx",
+    "file": "documents/Договор_Сабақ_онлаин_рус_luaqF6m_JAWK57Q.docx",
+    "status": "DRAFT",
+    "org_signature": null,
+    "org_signed_at": null,
+    "client_fields": [],
+    "manager_fields": {},
+    "client_phone": "",
+    "created_at": "2026-05-14T13:53:45.200Z",
+    "updated_at": "2026-05-14T13:54:26.573Z"
+  }
+},
+{
+  "model": "documents.documentsignature",
+  "pk": 1,
+  "fields": {
+    "document": 1,
+    "client": null,
+    "client_email": "shantiber123@gmail.com",
+    "signature": "CONFIRMED:shantiber123@gmail.com",
+    "signed_at": "2026-05-12T11:21:12.399Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "1ec628b94e940c5d98f72f3d09454264138136dc",
+  "fields": {
+    "user": [
+      "ivan"
+    ],
+    "created": "2026-05-14T15:33:47.889Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "69e9624353f626cce0b565f1cb7959951b268747",
+  "fields": {
+    "user": [
+      "nadyrkhans"
+    ],
+    "created": "2026-05-14T13:52:53.241Z"
+  }
+},
+{
+  "model": "authtoken.token",
+  "pk": "e07c8cdf3fed2a38840d36ee00e4caf6ff6f40b4",
+  "fields": {
+    "user": [
+      "shantinuri123"
+    ],
+    "created": "2026-05-12T11:18:29.489Z"
+  }
+}
+]

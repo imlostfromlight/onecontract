@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
-import { AIChatWidget } from '../components/AIChatWidget';
-import { Shield, ChevronDown, ChevronUp, Download, CheckCircle, Phone, KeyRound } from 'lucide-react';
+import { Shield, ChevronDown, ChevronUp, Download, CheckCircle, Phone, KeyRound, QrCode, Fingerprint } from 'lucide-react';
+import ncalayer from '../lib/ncalayer';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 
@@ -17,7 +17,9 @@ interface Doc {
   client_phone: string;
 }
 
-type Step = 'fill' | 'phone' | 'otp' | 'sign' | 'done';
+type Step = 'fill' | 'method' | 'phone' | 'otp' | 'ecp' | 'egov' | 'done';
+
+const inputClass = 'w-full bg-white border border-[#A6C5D7] px-4 py-3 rounded-xl text-sm text-[#0D1B2A] placeholder-[#A6C5D7] focus:outline-none focus:ring-2 focus:ring-[#0F52BA]/30 focus:border-[#0F52BA] transition-colors';
 
 export function PublicDocumentSign() {
   const { uuid } = useParams();
@@ -32,16 +34,20 @@ export function PublicDocumentSign() {
   const [agreed1, setAgreed1] = useState(false);
   const [agreed2, setAgreed2] = useState(false);
 
-  // Phone/OTP step
+  // SMS step
   const [phone, setPhone] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [otp, setOtp] = useState('');
   const [confirming, setConfirming] = useState(false);
-  const [signerEmail, setSignerEmail] = useState('');
   const [debugCode, setDebugCode] = useState<string | null>(null);
 
-  // Simple sign (no phone)
-  const [signing, setSigning] = useState(false);
+  // ECP step
+  const [ecpLoading, setEcpLoading] = useState(false);
+
+  // eGov QR step
+  const [sigexSession, setSigexSession] = useState<{ id: string; qr_image: string; expire_at: number } | null>(null);
+  const [sigexStatus, setSigexStatus] = useState<'LOADING' | 'WAITING' | 'SIGNED' | 'EXPIRED' | 'ERROR'>('LOADING');
+  const sigexPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Preview
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -54,7 +60,11 @@ export function PublicDocumentSign() {
 
   useEffect(() => {
     if (document) {
-      if (normalizedFields.length === 0) setStep(document.client_phone ? 'phone' : 'sign');
+      if (localStorage.getItem(`signed_${document.uuid}`)) {
+        setStep('done');
+        return;
+      }
+      if (normalizedFields.length === 0) setStep('method');
       else {
         const init: Record<string, string> = {};
         normalizedFields.forEach(f => { init[f.name] = ''; });
@@ -63,6 +73,16 @@ export function PublicDocumentSign() {
       }
     }
   }, [document]);
+
+  // Start Sigex session when entering egov step
+  useEffect(() => {
+    if (step === 'egov' && !sigexSession) {
+      initSigex();
+    }
+    return () => {
+      if (sigexPollRef.current) clearInterval(sigexPollRef.current);
+    };
+  }, [step]);
 
   const fetchDocument = async () => {
     try {
@@ -86,10 +106,12 @@ export function PublicDocumentSign() {
       if (!res.ok) throw new Error((await res.json()).detail || 'Ошибка');
       const data = await res.json();
       setDocument(data.document);
-      setStep(data.document.client_phone ? 'phone' : 'sign');
+      setStep('method');
     } catch (e: any) { setError(e.message); }
     finally { setFilling(false); }
   };
+
+  // ── SMS ──────────────────────────────────────────────────────────────────
 
   const handleVerifyPhone = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,32 +139,109 @@ export function PublicDocumentSign() {
       const res = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/confirm-otp/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code: otp, email: signerEmail }),
+        body: JSON.stringify({ phone, code: otp }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Ошибка');
+      if (document) localStorage.setItem(`signed_${document.uuid}`, '1');
       setStep('done');
       fetchDocument();
     } catch (e: any) { setError(e.message); }
     finally { setConfirming(false); }
   };
 
-  const handleSimpleSign = async () => {
+  // ── ECP ──────────────────────────────────────────────────────────────────
+
+  const handleECP = async () => {
     if (!document) return;
-    setSigning(true); setError(null);
+    setEcpLoading(true); setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/sign/`, {
+      const dataToSign = btoa(document.uuid);
+      const signature = await ncalayer.signFile(dataToSign);
+      const res = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/sign-ecp/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: signerEmail, signature: `CONFIRMED:${signerEmail}` }),
+        body: JSON.stringify({ signed_data: dataToSign, signature_key: signature }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Ошибка');
+      if (document) localStorage.setItem(`signed_${document.uuid}`, '1');
       setStep('done');
       fetchDocument();
     } catch (e: any) { setError(e.message); }
-    finally { setSigning(false); }
+    finally { setEcpLoading(false); }
   };
+
+  // ── Sigex eGov QR ────────────────────────────────────────────────────────
+
+  const initSigex = async () => {
+    if (!document) return;
+    setSigexStatus('LOADING');
+    try {
+      const res = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/sigex-init/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Ошибка');
+      setSigexSession(data);
+      setSigexStatus('WAITING');
+      startSigexPolling(data.id);
+    } catch (e: any) {
+      setSigexStatus('ERROR');
+      setError(e.message);
+    }
+  };
+
+  const startSigexPolling = (sessionId: string) => {
+    if (sigexPollRef.current) clearInterval(sigexPollRef.current);
+    sigexPollRef.current = setInterval(async () => {
+      if (!document) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/sigex-status/?session_id=${sessionId}`);
+        const data = await res.json();
+        if (data.status === 'SIGNED') {
+          clearInterval(sigexPollRef.current!);
+          await recordEgovSign(data.iin || '');
+        } else if (data.status === 'CANCELED') {
+          clearInterval(sigexPollRef.current!);
+          setSigexStatus('ERROR');
+          setError('Подписание отменено в eGov Mobile');
+        } else if (data.status === 'EXPIRED' || data.status === 'ERROR') {
+          clearInterval(sigexPollRef.current!);
+          setSigexStatus(data.status);
+        }
+      } catch { /* ignore poll errors */ }
+    }, 2000);
+  };
+
+  const recordEgovSign = async (iin: string) => {
+    if (!document) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/documents/public/${document.uuid}/sign-egov/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ iin }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Ошибка');
+      setSigexStatus('SIGNED');
+      if (document) localStorage.setItem(`signed_${document.uuid}`, '1');
+      setStep('done');
+      fetchDocument();
+    } catch (e: any) { setError(e.message); }
+  };
+
+  const handleMockSigex = async () => {
+    if (!sigexSession || !document) return;
+    await fetch(`${API_BASE}/api/documents/public/${document.uuid}/sigex-mock-confirm/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sigexSession.id, iin: '123456789012' }),
+    });
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   const fileUrl = document ? `${API_BASE}/api/documents/public/${document.uuid}/file/` : '';
   const previewUrl = document ? `${API_BASE}/api/documents/public/${document.uuid}/file/?inline=1` : '';
@@ -150,15 +249,11 @@ export function PublicDocumentSign() {
   const isDocx = document?.file_name?.toLowerCase().endsWith('.docx');
   const managerFieldEntries = Object.entries(document?.manager_fields || {});
   const formValid = normalizedFields.every(f => clientValues[f.name]?.trim()) && agreed1 && agreed2;
-
-  const inputClass = 'w-full bg-white border border-[#A6C5D7] px-4 py-3 rounded-xl text-sm text-[#0D1B2A] placeholder-[#A6C5D7] focus:outline-none focus:ring-2 focus:ring-[#0F52BA]/30 focus:border-[#0F52BA] transition-colors';
+  const hasPhone = !!document?.client_phone;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-white">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-[#0F52BA] border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-[#6B7E92]">Загрузка документа...</p>
-      </div>
+      <div className="w-8 h-8 border-2 border-[#0F52BA] border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
@@ -174,42 +269,17 @@ export function PublicDocumentSign() {
 
   if (!document) return null;
 
-  /* Step indicator */
-  const steps = document.client_phone
-    ? [{ id: 'fill', label: 'Данные' }, { id: 'phone', label: 'Телефон' }, { id: 'otp', label: 'Код' }, { id: 'done', label: 'Готово' }]
-    : [{ id: 'fill', label: 'Данные' }, { id: 'sign', label: 'Подпись' }, { id: 'done', label: 'Готово' }];
-  const stepIdx = steps.findIndex(s => s.id === step);
-
   return (
     <div className="min-h-screen bg-[#F5F8FF] flex flex-col">
       <Header />
       <main className="flex-grow pt-24 pb-12 px-4">
         <div className="mx-auto max-w-lg">
-          {/* Shield */}
           <div className="flex items-center justify-center gap-2 mb-5 bg-[#D6E6F3] text-[#0F52BA] text-xs font-semibold px-4 py-2 rounded-full w-fit mx-auto">
             <Shield className="w-3.5 h-3.5" />
             ПЭП — юридически значимо по ГК РК ст.152
           </div>
 
-          {/* Step indicator */}
-          {normalizedFields.length > 0 && step !== 'done' && (
-            <div className="flex items-center justify-center gap-2 mb-6">
-              {steps.map((s, i) => (
-                <React.Fragment key={s.id}>
-                  <div className={`flex items-center gap-1.5 ${i <= stepIdx ? 'text-[#0F52BA]' : 'text-[#A6C5D7]'}`}>
-                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i < stepIdx ? 'bg-[#0F52BA] text-white' : i === stepIdx ? 'bg-[#0F52BA] text-white' : 'bg-[#D6E6F3] text-[#A6C5D7]'}`}>
-                      {i < stepIdx ? '✓' : i + 1}
-                    </div>
-                    <span className="text-xs font-medium hidden sm:block">{s.label}</span>
-                  </div>
-                  {i < steps.length - 1 && <div className={`w-8 h-px ${i < stepIdx ? 'bg-[#0F52BA]' : 'bg-[#D6E6F3]'}`} />}
-                </React.Fragment>
-              ))}
-            </div>
-          )}
-
           <div className="bg-white rounded-2xl border border-[#D6E6F3] shadow-sm overflow-hidden">
-            {/* Header */}
             <div className="px-6 pt-6 pb-4 border-b border-[#D6E6F3]">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -265,13 +335,25 @@ export function PublicDocumentSign() {
                     <CheckCircle className="w-8 h-8 text-[#0F7B55]" />
                   </div>
                   <h3 className="text-lg font-bold text-[#000926] mb-1">Договор подписан!</h3>
-                  <p className="text-sm text-[#6B7E92] mb-5">Ваша подпись успешно добавлена</p>
-                  <a href={fileUrl} download className="inline-flex items-center gap-2 px-5 py-2.5 border border-[#A6C5D7] rounded-xl text-sm font-medium text-[#0D1B2A] hover:bg-[#D6E6F3] transition-colors">
-                    <Download className="w-4 h-4" /> Скачать документ
-                  </a>
+                  <p className="text-sm text-[#6B7E92] mb-6">Ваша подпись успешно добавлена</p>
+                  <div className="flex flex-col gap-3">
+                    <a href={fileUrl} download className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[#0F52BA] rounded-xl text-sm font-medium text-white hover:bg-[#0D47A1] transition-colors">
+                      <Download className="w-4 h-4" /> Скачать документ
+                    </a>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(window.location.href);
+                        alert('Ссылка скопирована');
+                      }}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-[#A6C5D7] rounded-xl text-sm font-medium text-[#0D1B2A] hover:bg-[#D6E6F3] transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                      Поделиться ссылкой
+                    </button>
+                  </div>
                 </div>
 
-              ) : step === 'fill' && normalizedFields.length > 0 ? (
+              ) : step === 'fill' ? (
                 <form onSubmit={handleFillFields} className="space-y-5">
                   {managerFieldEntries.length > 0 && (
                     <div>
@@ -327,42 +409,71 @@ export function PublicDocumentSign() {
                   </button>
                 </form>
 
+              ) : step === 'method' ? (
+                /* Method selection */
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold text-[#000926] mb-4">Выберите способ подписания</p>
+                  {hasPhone ? (
+                    <button onClick={() => setStep('phone')}
+                      className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#0F52BA] rounded-xl hover:bg-[#D6E6F3] transition-colors text-left">
+                      <Phone className="w-6 h-6 text-[#0F52BA] shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-[#000926]">SMS-код</p>
+                        <p className="text-xs text-[#6B7E92]">Получите код на номер из договора</p>
+                      </div>
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={() => setStep('ecp')}
+                        className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#D6E6F3] rounded-xl hover:border-[#0F52BA] hover:bg-[#D6E6F3] transition-colors text-left">
+                        <Fingerprint className="w-6 h-6 text-[#0F52BA] shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-[#000926]">ЭЦП (NCALayer)</p>
+                          <p className="text-xs text-[#6B7E92]">Подпишите с помощью ЭЦП через приложение NCALayer</p>
+                        </div>
+                      </button>
+                      <button onClick={() => setStep('egov')}
+                        className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#D6E6F3] rounded-xl hover:border-[#0F52BA] hover:bg-[#D6E6F3] transition-colors text-left">
+                        <QrCode className="w-6 h-6 text-[#0F52BA] shrink-0" />
+                        <div>
+                          <p className="text-sm font-semibold text-[#000926]">eGov Mobile (Sigex)</p>
+                          <p className="text-xs text-[#6B7E92]">Сканируйте QR-код через приложение eGov Mobile</p>
+                        </div>
+                      </button>
+                    </>
+                  )}
+                </div>
+
               ) : step === 'phone' ? (
-                /* Phone verification */
                 <form onSubmit={handleVerifyPhone} className="space-y-4">
                   <div className="flex items-center gap-3 bg-[#D6E6F3] rounded-xl px-4 py-3">
                     <Phone className="w-5 h-5 text-[#0F52BA] shrink-0" />
                     <div>
-                      <p className="text-sm font-semibold text-[#000926]">Подтверждение по телефону</p>
-                      <p className="text-xs text-[#6B7E92]">Введите номер, указанный в договоре. Вам придёт SMS с кодом.</p>
+                      <p className="text-sm font-semibold text-[#000926]">Подтверждение по SMS</p>
+                      <p className="text-xs text-[#6B7E92]">Введите номер, указанный в договоре</p>
                     </div>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-2">Номер телефона</label>
-                    <input
-                      type="tel"
-                      required
-                      value={phone}
-                      onChange={e => setPhone(e.target.value)}
-                      placeholder="+7 (___) ___-__-__"
-                      className={inputClass}
-                    />
+                    <input type="tel" required value={phone} onChange={e => setPhone(e.target.value)}
+                      placeholder="+7 (___) ___-__-__" className={inputClass} />
                   </div>
                   {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
                   <button type="submit" disabled={verifying || !phone}
                     className="w-full bg-[#0F52BA] hover:bg-[#0a3d8f] disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors text-sm">
-                    {verifying ? 'Проверка...' : 'Получить SMS код →'}
+                    {verifying ? 'Отправка...' : 'Получить SMS код →'}
                   </button>
+                  <button type="button" onClick={() => { setStep('method'); setError(null); }}
+                    className="w-full text-xs text-[#6B7E92] hover:text-[#0F52BA] transition-colors py-1">← Назад</button>
                 </form>
 
               ) : step === 'otp' ? (
-                /* OTP verification */
                 <form onSubmit={handleConfirmOtp} className="space-y-4">
                   <div className="flex items-center gap-3 bg-[#D6E6F3] rounded-xl px-4 py-3">
                     <KeyRound className="w-5 h-5 text-[#0F52BA] shrink-0" />
                     <div>
                       <p className="text-sm font-semibold text-[#000926]">Введите код из SMS</p>
-                      <p className="text-xs text-[#6B7E92]">Отправлен на {phone}. Код действителен 10 минут.</p>
+                      <p className="text-xs text-[#6B7E92]">Отправлен на {phone}. Действителен 10 минут.</p>
                     </div>
                   </div>
                   {debugCode && (
@@ -372,21 +483,9 @@ export function PublicDocumentSign() {
                   )}
                   <div>
                     <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-2">6-значный код</label>
-                    <input
-                      type="text"
-                      required
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={otp}
-                      onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="______"
-                      className={`${inputClass} tracking-widest text-center text-lg font-bold`}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-2">Email (для подтверждения)</label>
-                    <input type="email" value={signerEmail} onChange={e => setSignerEmail(e.target.value)}
-                      placeholder="вы@example.com" className={inputClass} />
+                    <input type="text" required inputMode="numeric" maxLength={6}
+                      value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="______" className={`${inputClass} tracking-widest text-center text-lg font-bold`} />
                   </div>
                   {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
                   <button type="submit" disabled={confirming || otp.length !== 6}
@@ -394,35 +493,75 @@ export function PublicDocumentSign() {
                     {confirming ? 'Подписание...' : 'Подтвердить и подписать'}
                   </button>
                   <button type="button" onClick={() => { setStep('phone'); setOtp(''); setError(null); }}
-                    className="w-full text-xs text-[#6B7E92] hover:text-[#0F52BA] transition-colors py-1">
-                    ← Изменить номер
-                  </button>
+                    className="w-full text-xs text-[#6B7E92] hover:text-[#0F52BA] transition-colors py-1">← Изменить номер</button>
                 </form>
 
-              ) : step === 'sign' ? (
-                /* Simple sign (no phone required) */
+              ) : step === 'ecp' ? (
                 <div className="space-y-4">
-                  <div className="bg-[#D6E6F3] rounded-xl px-4 py-3 text-sm text-[#0F52BA] font-medium">
-                    Данные внесены в договор. Подпишите документ.
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#6B7E92] uppercase tracking-wider mb-2">
-                      Email для подтверждения <span className="text-red-400">*</span>
-                    </label>
-                    <input type="email" required value={signerEmail} onChange={e => setSignerEmail(e.target.value)}
-                      placeholder="вы@example.com" className={inputClass} />
+                  <div className="flex items-center gap-3 bg-[#D6E6F3] rounded-xl px-4 py-3">
+                    <Fingerprint className="w-5 h-5 text-[#0F52BA] shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#000926]">Подписание через ЭЦП</p>
+                      <p className="text-xs text-[#6B7E92]">Убедитесь что приложение NCALayer запущено на вашем компьютере</p>
+                    </div>
                   </div>
                   {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error}</div>}
-                  <div className="flex gap-3">
-                    <a href={fileUrl} download
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 border border-[#A6C5D7] rounded-xl text-sm font-medium text-[#0D1B2A] hover:bg-[#D6E6F3] transition-colors">
-                      <Download className="w-4 h-4" /> Скачать
-                    </a>
-                    <button onClick={handleSimpleSign} disabled={signing || !signerEmail}
-                      className="flex-1 bg-[#0F52BA] hover:bg-[#0a3d8f] disabled:opacity-60 text-white font-semibold px-4 py-3 rounded-xl transition-colors text-sm">
-                      {signing ? 'Подписание...' : 'Подписать документ'}
-                    </button>
+                  <button onClick={handleECP} disabled={ecpLoading}
+                    className="w-full bg-[#0F52BA] hover:bg-[#0a3d8f] disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+                    {ecpLoading ? (
+                      <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Ожидание NCALayer...</>
+                    ) : (
+                      <><Fingerprint className="w-4 h-4" /> Подписать через NCALayer</>
+                    )}
+                  </button>
+                  <button type="button" onClick={() => { setStep('method'); setError(null); }}
+                    className="w-full text-xs text-[#6B7E92] hover:text-[#0F52BA] transition-colors py-1">← Назад</button>
+                </div>
+
+              ) : step === 'egov' ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 bg-[#D6E6F3] rounded-xl px-4 py-3">
+                    <QrCode className="w-5 h-5 text-[#0F52BA] shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#000926]">eGov Mobile (Sigex)</p>
+                      <p className="text-xs text-[#6B7E92]">Откройте eGov Mobile и сканируйте QR-код</p>
+                    </div>
                   </div>
+
+                  {sigexStatus === 'LOADING' && (
+                    <div className="flex justify-center py-8">
+                      <div className="w-8 h-8 border-2 border-[#0F52BA] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+
+                  {sigexStatus === 'WAITING' && sigexSession && (
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="bg-white p-4 rounded-xl border-2 border-[#D6E6F3] shadow-sm">
+                        <img
+                          src={`data:image/png;base64,${sigexSession.qr_image}`}
+                          alt="QR код для подписания"
+                          width={200}
+                          height={200}
+                        />
+                      </div>
+                      <p className="text-xs text-[#6B7E92] text-center">Сканируйте QR через eGov Mobile и подтвердите подписание</p>
+                    </div>
+                  )}
+
+                  {sigexStatus === 'EXPIRED' && (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-red-600 mb-3">QR-код истёк</p>
+                      <button onClick={() => { setSigexSession(null); initSigex(); }}
+                        className="text-sm text-[#0F52BA] hover:underline">Обновить QR-код</button>
+                    </div>
+                  )}
+
+                  {sigexStatus === 'ERROR' && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">{error || 'Ошибка соединения'}</div>
+                  )}
+
+                  <button type="button" onClick={() => { setStep('method'); setError(null); if (sigexPollRef.current) clearInterval(sigexPollRef.current); setSigexSession(null); setSigexStatus('LOADING'); }}
+                    className="w-full text-xs text-[#6B7E92] hover:text-[#0F52BA] transition-colors py-1">← Назад</button>
                 </div>
               ) : null}
             </div>
@@ -430,7 +569,6 @@ export function PublicDocumentSign() {
         </div>
       </main>
       <Footer />
-      <AIChatWidget />
     </div>
   );
 }

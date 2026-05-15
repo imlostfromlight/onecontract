@@ -3,6 +3,7 @@ import re
 import random
 import logging
 import tempfile
+import contextlib
 import urllib.parse
 from datetime import timedelta
 
@@ -12,17 +13,77 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.utils import timezone
 from django.core.files import File
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponseRedirect
 
 from .models import Document, Template, DocumentSignature, OTPSession
 from .serializers import DocumentSerializer, TemplateSerializer, DocumentSignatureSerializer
-from .sms_service import send_sms
+from .sms_service import send_sms, otp_send, otp_check
 from .docx_utils import fill_placeholders
 from .ai_summarizer import extract_text, summarize_document
 from users.ncalayer_auth import verify_ncalayer_signature
 from users.models import User
 from users.egov_mobile import EGovMobileAuth
 from users.permissions import IsSuperAdmin, IsAdminUser, IsOrganization, IsClient, IsOrganizationOrClient
+
+
+def _safe_filename(name: str) -> str:
+    """Replace Cyrillic and special chars with ASCII-safe equivalents."""
+    import unicodedata
+    name = unicodedata.normalize('NFKD', name)
+    name = name.encode('ascii', 'ignore').decode('ascii')
+    name = re.sub(r'[^\w.\-]', '_', name)
+    return name or 'file'
+
+
+def _public_url(storage_file):
+    from django.conf import settings
+    base = settings.MEDIA_URL
+    if base.startswith('http'):
+        return base.rstrip('/') + '/' + storage_file.name.lstrip('/')
+    return None
+
+
+def _read_s3_file(storage_file):
+    """Read file bytes via boto3 GetObject (no HeadObject, no checksum headers)."""
+    from django.conf import settings as djs
+    import boto3
+    from botocore.config import Config
+    client = boto3.client(
+        's3',
+        endpoint_url=djs.AWS_S3_ENDPOINT_URL,
+        aws_access_key_id=djs.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=djs.AWS_SECRET_ACCESS_KEY,
+        region_name=getattr(djs, 'AWS_S3_REGION_NAME', 'us-east-1'),
+        config=Config(
+            s3={'addressing_style': 'path'},
+            signature_version='s3v4',
+            request_checksum_calculation='when_required',
+            response_checksum_validation='when_required',
+        ),
+    )
+    resp = client.get_object(Bucket=djs.AWS_STORAGE_BUCKET_NAME, Key=storage_file.name)
+    return resp['Body'].read()
+
+
+@contextlib.contextmanager
+def _local_copy(storage_file):
+    """Download a storage file to a local temp path, yield the path."""
+    from django.conf import settings as djs
+    suffix = os.path.splitext(storage_file.name)[1]
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        if hasattr(djs, 'AWS_S3_ENDPOINT_URL'):
+            f.write(_read_s3_file(storage_file))
+        else:
+            with storage_file.open('rb') as sf:
+                f.write(sf.read())
+        tmp_path = f.name
+    try:
+        yield tmp_path
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +110,10 @@ class TemplateViewSet(viewsets.ModelViewSet):
         encoded_name = urllib.parse.quote(file_name)
         inline = request.query_params.get('inline', '0') == '1'
         disposition = 'inline' if inline else 'attachment'
-        response = FileResponse(open(template.file.path, 'rb'))
+        pub = _public_url(template.file)
+        if pub:
+            return HttpResponseRedirect(pub)
+        response = FileResponse(template.file.open('rb'))
         response['Content-Disposition'] = f"{disposition}; filename*=UTF-8''{encoded_name}"
         response['Cache-Control'] = 'no-store'
         return response
@@ -68,21 +132,20 @@ class TemplateViewSet(viewsets.ModelViewSet):
         client_fields = request.data.get('client_fields') or []
 
         try:
-            src_path = template.file.path
-            src_name = os.path.basename(src_path)
+            src_name = os.path.basename(template.file.name)
+            with _local_copy(template.file) as src_path:
+                with tempfile.TemporaryDirectory() as tmp:
+                    dest_path = os.path.join(tmp, src_name)
+                    fill_placeholders(src_path, fields, dest_path)
 
-            with tempfile.TemporaryDirectory() as tmp:
-                dest_path = os.path.join(tmp, src_name)
-                fill_placeholders(src_path, fields, dest_path)
-
-                document = Document(
-                    user=request.user, template=template, title=title,
-                    client_fields=client_fields, manager_fields=fields,
-                    client_phone=request.data.get('client_phone', ''),
-                )
-                with open(dest_path, 'rb') as f:
-                    document.file.save(src_name, File(f), save=False)
-                document.save()
+                    document = Document(
+                        user=request.user, template=template, title=title,
+                        client_fields=client_fields, manager_fields=fields,
+                        client_phone=request.data.get('client_phone', ''),
+                    )
+                    with open(dest_path, 'rb') as f:
+                        document.file.save(src_name, File(f), save=False)
+                    document.save()
 
             return Response(DocumentSerializer(document, context={'request': request}).data,
                             status=status.HTTP_201_CREATED)
@@ -96,7 +159,9 @@ class DocumentViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_permissions(self):
-        if self.action in ['public_retrieve', 'public_summarize', 'public_fill', 'public_file', 'public_sign', 'verify_phone', 'confirm_otp']:
+        if self.action in ['public_retrieve', 'public_summarize', 'public_fill', 'public_file',
+                           'public_b64', 'public_sign', 'verify_phone', 'confirm_otp',
+                           'sign_ecp', 'sign_egov', 'sigex_init', 'sigex_status', 'sigex_mock_confirm']:
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
 
@@ -143,13 +208,13 @@ class DocumentViewSet(viewsets.ModelViewSet):
         all_fields = {**document.manager_fields, **fields}
 
         try:
-            src_path = document.file.path
-            src_name = os.path.basename(src_path)
-            with tempfile.TemporaryDirectory() as tmp:
-                dest_path = os.path.join(tmp, src_name)
-                fill_placeholders(src_path, all_fields, dest_path)
-                with open(dest_path, 'rb') as f:
-                    document.file.save(src_name, File(f), save=False)
+            src_name = os.path.basename(document.file.name)
+            with _local_copy(document.file) as src_path:
+                with tempfile.TemporaryDirectory() as tmp:
+                    dest_path = os.path.join(tmp, src_name)
+                    fill_placeholders(src_path, all_fields, dest_path)
+                    with open(dest_path, 'rb') as f:
+                        document.file.save(src_name, File(f), save=False)
             document.client_fields = []
             document.save()
         except Exception as e:
@@ -168,13 +233,38 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
         file_name = os.path.basename(document.file.name)
         encoded_name = urllib.parse.quote(file_name)
-        response = FileResponse(open(document.file.path, 'rb'))
         inline = request.query_params.get('inline', '0') == '1'
+        pub = _public_url(document.file)
+        if pub:
+            return HttpResponseRedirect(pub)
         disposition = 'inline' if inline else 'attachment'
+        response = FileResponse(document.file.open('rb'))
         response['Content-Disposition'] = f"{disposition}; filename*=UTF-8''{encoded_name}"
         response['Cache-Control'] = 'no-store'
         response['X-Frame-Options'] = 'SAMEORIGIN'
         return response
+
+    @action(detail=False, methods=['get'],
+            url_path='public/(?P<uuid>[^/.]+)/b64',
+            permission_classes=[permissions.AllowAny])
+    def public_b64(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+        import base64 as _b64, mimetypes
+        from django.conf import settings as djs
+        try:
+            if hasattr(djs, 'AWS_S3_ENDPOINT_URL'):
+                raw = _read_s3_file(document.file)
+            else:
+                with document.file.open('rb') as f:
+                    raw = f.read()
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        file_name = os.path.basename(document.file.name)
+        mime = mimetypes.guess_type(file_name)[0] or 'application/octet-stream'
+        return Response({'data': _b64.b64encode(raw).decode(), 'name': file_name, 'mime': mime})
 
     @action(detail=False, methods=['post'],
             url_path='public/(?P<uuid>[^/.]+)/sign',
@@ -241,14 +331,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         if phone[-10:] != stored[-10:]:
             return Response({'detail': 'Номер телефона не совпадает'}, status=status.HTTP_400_BAD_REQUEST)
 
-        code = str(random.randint(100000, 999999))
-        expires = timezone.now() + timedelta(minutes=10)
-        document.otp_sessions.filter(is_used=False).update(is_used=True)
-        OTPSession.objects.create(document=document, phone=phone, code=code, expires_at=expires)
-
-        send_sms(f'+{phone}', f'Ваш код для подписания договора OneContract: {code}. Действителен 10 минут.')
-
         from django.conf import settings as djsettings
+        code = otp_send(f'+{phone}')
         resp = {'detail': 'Код отправлен на ваш номер'}
         if getattr(djsettings, 'SMS_DEBUG', True):
             resp['debug_code'] = code
@@ -267,19 +351,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
         code = request.data.get('code', '').strip()
         email = request.data.get('email', '')
 
-        try:
-            otp = document.otp_sessions.filter(
-                is_used=False,
-                expires_at__gt=timezone.now(),
-            ).filter(phone__endswith=phone[-10:]).latest('created_at')
-        except OTPSession.DoesNotExist:
+        if not otp_check(f'+{phone}', code):
             return Response({'detail': 'Неверный или истёкший код'}, status=status.HTTP_400_BAD_REQUEST)
-
-        if otp.code != code:
-            return Response({'detail': 'Неверный код'}, status=status.HTTP_400_BAD_REQUEST)
-
-        otp.is_used = True
-        otp.save()
 
         client = request.user if request.user.is_authenticated else None
         sig = DocumentSignature.objects.create(
@@ -335,7 +408,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             'signature': DocumentSignatureSerializer(sig).data,
         })
 
-    # ── eGov QR signing ───────────────────────────────────────────────────────
+    # ── eGov QR / Sigex signing ───────────────────────────────────────────────
 
     @action(detail=False, methods=['post'],
             url_path='public/(?P<uuid>[^/.]+)/sign-egov',
@@ -349,9 +422,7 @@ class DocumentViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'Документ закрыт'}, status=status.HTTP_400_BAD_REQUEST)
 
         iin = request.data.get('iin', '')
-        email = request.data.get('email', '') or (f'{iin}@egov.kz' if iin else '')
-        if not email:
-            return Response({'detail': 'Не получены данные подписанта'}, status=status.HTTP_400_BAD_REQUEST)
+        email = request.data.get('email', '') or (f'{iin}@egov.kz' if iin else 'signer@egov.kz')
 
         sig = DocumentSignature.objects.create(
             document=document,
@@ -363,6 +434,60 @@ class DocumentViewSet(viewsets.ModelViewSet):
             'detail': 'Документ подписан через eGov QR',
             'signature': DocumentSignatureSerializer(sig).data,
         })
+
+    @action(detail=False, methods=['post'],
+            url_path='public/(?P<uuid>[^/.]+)/sigex-init',
+            permission_classes=[permissions.AllowAny])
+    def sigex_init(self, request, uuid=None):
+        try:
+            document = Document.objects.get(uuid=uuid)
+        except Document.DoesNotExist:
+            return Response({'detail': 'Документ не найден'}, status=status.HTTP_404_NOT_FOUND)
+        if document.status == 'CLOSED':
+            return Response({'detail': 'Документ закрыт'}, status=status.HTTP_400_BAD_REQUEST)
+        from .sigex import create_signing_session
+        import base64 as _b64
+        file_b64 = None
+        file_mime = '@file/pdf'
+        if document.file:
+            try:
+                from django.conf import settings as _djs
+                if hasattr(_djs, 'AWS_S3_ENDPOINT_URL'):
+                    raw = _read_s3_file(document.file)
+                else:
+                    with document.file.open('rb') as f:
+                        raw = f.read()
+                file_b64 = _b64.b64encode(raw).decode('utf-8')
+                if document.file.name.lower().endswith('.docx'):
+                    file_mime = '@file/docx'
+            except Exception:
+                pass
+        try:
+            session = create_signing_session(document.title, file_b64, file_mime)
+            return Response(session)
+        except Exception as e:
+            return Response({'detail': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get'],
+            url_path='public/(?P<uuid>[^/.]+)/sigex-status',
+            permission_classes=[permissions.AllowAny])
+    def sigex_status(self, request, uuid=None):
+        session_id = request.query_params.get('session_id', '')
+        if not session_id:
+            return Response({'detail': 'session_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        from .sigex import get_session_status
+        return Response(get_session_status(session_id))
+
+    @action(detail=False, methods=['post'],
+            url_path='public/(?P<uuid>[^/.]+)/sigex-mock-confirm',
+            permission_classes=[permissions.AllowAny])
+    def sigex_mock_confirm(self, request, uuid=None):
+        session_id = request.data.get('session_id', '')
+        iin = request.data.get('iin', '000000000000')
+        from .sigex import mock_confirm
+        if not mock_confirm(session_id, iin):
+            return Response({'detail': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response({'detail': 'Confirmed'})
 
     # ── Org signature ─────────────────────────────────────────────────────────
 
@@ -419,7 +544,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def summarize(self, request, pk=None):
         document = self.get_object()
         try:
-            text = extract_text(document.file.path)
+            with _local_copy(document.file) as tmp_path:
+                text = extract_text(tmp_path)
             summary = summarize_document(text)
             return Response({
                 'document_id': document.id,
@@ -437,7 +563,8 @@ class DocumentViewSet(viewsets.ModelViewSet):
     def public_summarize(self, request, uuid=None):
         try:
             document = Document.objects.get(uuid=uuid)
-            text = extract_text(document.file.path)
+            with _local_copy(document.file) as tmp_path:
+                text = extract_text(tmp_path)
             summary = summarize_document(text)
             return Response({
                 'document_id': document.id,

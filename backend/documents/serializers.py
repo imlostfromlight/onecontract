@@ -30,14 +30,26 @@ class TemplateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data['organization'] = self.context['request'].user
+        # Sanitize filename for S3 compatibility
+        if 'file' in validated_data and validated_data['file']:
+            import unicodedata, re as _re
+            f = validated_data['file']
+            safe = unicodedata.normalize('NFKD', f.name).encode('ascii', 'ignore').decode('ascii')
+            safe = _re.sub(r'[^\w.\-]', '_', safe) or 'file'
+            f.name = safe
         instance = super().create(validated_data)
-        # Auto-extract placeholders from DOCX after save
         try:
             from .docx_utils import extract_placeholders
-            fields = extract_placeholders(instance.file.path)
-            if fields:
-                instance.template_fields = fields
-                instance.save(update_fields=['template_fields'])
+            import tempfile, os
+            suffix = os.path.splitext(instance.file.name)[1]
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                for chunk in instance.file.chunks():
+                    tmp.write(chunk)
+                tmp_path = tmp.name
+            fields = extract_placeholders(tmp_path)
+            os.unlink(tmp_path)
+            instance.template_fields = fields
+            instance.save(update_fields=['template_fields'])
         except Exception:
             pass
         return instance

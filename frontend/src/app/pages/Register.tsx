@@ -24,7 +24,7 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      await register({ email, password, password2, first_name: firstName, role: 'CLIENT' });
+      await register({ email, password, password2, first_name: firstName, role: 'ORGANIZATION' });
       setRegistered(true);
     } catch (err: any) {
       setError(err?.message || 'Ошибка регистрации');

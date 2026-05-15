@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.sites',
 
+    'storages',
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
@@ -108,6 +109,29 @@ else:
 
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = '/media/'
+
+# Supabase S3 Storage (used in production when vars are set)
+_SUPABASE_REF = config('SUPABASE_PROJECT_REF', default='')
+_SUPABASE_ACCESS = config('SUPABASE_S3_ACCESS_KEY', default='')
+_SUPABASE_SECRET = config('SUPABASE_S3_SECRET_KEY', default='')
+_SUPABASE_BUCKET = config('SUPABASE_S3_BUCKET', default='onecontract')
+
+if _SUPABASE_REF and _SUPABASE_ACCESS and _SUPABASE_SECRET:
+    STORAGES = {
+        'default': {'BACKEND': 'storages.backends.s3boto3.S3Boto3Storage'},
+        'staticfiles': {'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage'},
+    }
+    AWS_ACCESS_KEY_ID = _SUPABASE_ACCESS
+    AWS_SECRET_ACCESS_KEY = _SUPABASE_SECRET
+    AWS_STORAGE_BUCKET_NAME = _SUPABASE_BUCKET
+    AWS_S3_ENDPOINT_URL = f'https://{_SUPABASE_REF}.supabase.co/storage/v1/s3'
+    AWS_S3_REGION_NAME = 'ap-southeast-1'
+    AWS_DEFAULT_ACL = 'public-read'
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_QUERYSTRING_AUTH = False
+    AWS_S3_ADDRESSING_STYLE = 'path'
+    AWS_S3_SIGNATURE_VERSION = 's3v4'
+    MEDIA_URL = f'https://{_SUPABASE_REF}.supabase.co/storage/v1/object/public/{_SUPABASE_BUCKET}/'
 
 
 # Password validation
@@ -252,9 +276,23 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='OneContract <onecontr
 # SMS
 SMS_DEBUG = config('SMS_DEBUG', default=True, cast=bool)
 MOBIZON_API_KEY = config('MOBIZON_API_KEY', default='')
+MOBIZON_SENDER_NAME = config('MOBIZON_SENDER_NAME', default='')
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
+TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
+TWILIO_VERIFY_SERVICE_SID = config('TWILIO_VERIFY_SERVICE_SID', default='')
+TWILIO_FROM_NUMBER = config('TWILIO_FROM_NUMBER', default='')
+SMSC_LOGIN = config('SMSC_LOGIN', default='')
+SMSC_PASSWORD = config('SMSC_PASSWORD', default='')
 
 # Groq API Key
 GROQ_API_KEY = config('GROQ_API_KEY', default='')
+
+# Sigex eGov QR signing — public API, no key needed
+
+# Twilio SMS
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
+TWILIO_AUTH_TOKEN = config('TWILIO_AUTH_TOKEN', default='')
+TWILIO_FROM_NUMBER = config('TWILIO_FROM_NUMBER', default='')
 
 # MongoDB (for AI chat history)
 MONGODB_URI = config('MONGODB_URI', default='')

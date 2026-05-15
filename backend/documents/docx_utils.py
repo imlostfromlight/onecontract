@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 
-PLACEHOLDER_RE = re.compile(r'\{\{(\w+)\}\}')
+PLACEHOLDER_RE = re.compile(r'\{\{([\wЀ-ӿҰ-ұа-яА-ЯA-Za-z0-9_а-яёА-ЯЁәіңғүұқөһӘІҢҒҮҰҚӨҺ]+)\}\}', re.UNICODE)
 
 
 def _iter_runs(doc):
