@@ -15,6 +15,7 @@ interface Doc {
   client_fields: Array<DocumentField | string>;
   manager_fields: Record<string, string>;
   client_phone: string;
+  signing_methods: string[];
 }
 
 type Step = 'fill' | 'method' | 'phone' | 'otp' | 'ecp' | 'egov' | 'done';
@@ -45,7 +46,7 @@ export function PublicDocumentSign() {
   const [ecpLoading, setEcpLoading] = useState(false);
 
   // eGov QR step
-  const [sigexSession, setSigexSession] = useState<{ id: string; qr_image: string; expire_at: number } | null>(null);
+  const [sigexSession, setSigexSession] = useState<{ id: string; qr_image: string; expire_at: number; launch_link?: string } | null>(null);
   const [sigexStatus, setSigexStatus] = useState<'LOADING' | 'WAITING' | 'SIGNED' | 'EXPIRED' | 'ERROR'>('LOADING');
   const sigexPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -250,6 +251,10 @@ export function PublicDocumentSign() {
   const managerFieldEntries = Object.entries(document?.manager_fields || {});
   const formValid = normalizedFields.every(f => clientValues[f.name]?.trim()) && agreed1 && agreed2;
   const hasPhone = !!document?.client_phone;
+  const allowedMethods = document?.signing_methods?.length ? document.signing_methods : ['sms', 'ecp', 'egov'];
+  const showSms = allowedMethods.includes('sms') && hasPhone;
+  const showEcp = allowedMethods.includes('ecp');
+  const showEgov = allowedMethods.includes('egov');
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-white">
@@ -413,34 +418,35 @@ export function PublicDocumentSign() {
                 /* Method selection */
                 <div className="space-y-3">
                   <p className="text-sm font-semibold text-[#000926] mb-4">Выберите способ подписания</p>
-                  {hasPhone ? (
+                  {showSms && (
                     <button onClick={() => setStep('phone')}
-                      className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#0F52BA] rounded-xl hover:bg-[#D6E6F3] transition-colors text-left">
+                      className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#D6E6F3] rounded-xl hover:border-[#0F52BA] hover:bg-[#D6E6F3] transition-colors text-left">
                       <Phone className="w-6 h-6 text-[#0F52BA] shrink-0" />
                       <div>
                         <p className="text-sm font-semibold text-[#000926]">SMS-код</p>
                         <p className="text-xs text-[#6B7E92]">Получите код на номер из договора</p>
                       </div>
                     </button>
-                  ) : (
-                    <>
-                      <button onClick={() => setStep('ecp')}
-                        className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#D6E6F3] rounded-xl hover:border-[#0F52BA] hover:bg-[#D6E6F3] transition-colors text-left">
-                        <Fingerprint className="w-6 h-6 text-[#0F52BA] shrink-0" />
-                        <div>
-                          <p className="text-sm font-semibold text-[#000926]">ЭЦП (NCALayer)</p>
-                          <p className="text-xs text-[#6B7E92]">Подпишите с помощью ЭЦП через приложение NCALayer</p>
-                        </div>
-                      </button>
-                      <button onClick={() => setStep('egov')}
-                        className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#D6E6F3] rounded-xl hover:border-[#0F52BA] hover:bg-[#D6E6F3] transition-colors text-left">
-                        <QrCode className="w-6 h-6 text-[#0F52BA] shrink-0" />
-                        <div>
-                          <p className="text-sm font-semibold text-[#000926]">eGov Mobile (Sigex)</p>
-                          <p className="text-xs text-[#6B7E92]">Сканируйте QR-код через приложение eGov Mobile</p>
-                        </div>
-                      </button>
-                    </>
+                  )}
+                  {showEcp && (
+                    <button onClick={() => setStep('ecp')}
+                      className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#D6E6F3] rounded-xl hover:border-[#0F52BA] hover:bg-[#D6E6F3] transition-colors text-left">
+                      <Fingerprint className="w-6 h-6 text-[#0F52BA] shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-[#000926]">ЭЦП (NCALayer)</p>
+                        <p className="text-xs text-[#6B7E92]">Подпишите с помощью ЭЦП через приложение NCALayer</p>
+                      </div>
+                    </button>
+                  )}
+                  {showEgov && (
+                    <button onClick={() => setStep('egov')}
+                      className="w-full flex items-center gap-4 px-5 py-4 border-2 border-[#D6E6F3] rounded-xl hover:border-[#0F52BA] hover:bg-[#D6E6F3] transition-colors text-left">
+                      <QrCode className="w-6 h-6 text-[#0F52BA] shrink-0" />
+                      <div>
+                        <p className="text-sm font-semibold text-[#000926]">eGov Mobile (Sigex)</p>
+                        <p className="text-xs text-[#6B7E92]">Сканируйте QR-код через приложение eGov Mobile</p>
+                      </div>
+                    </button>
                   )}
                 </div>
 
@@ -545,6 +551,14 @@ export function PublicDocumentSign() {
                         />
                       </div>
                       <p className="text-xs text-[#6B7E92] text-center">Сканируйте QR через eGov Mobile и подтвердите подписание</p>
+                      {sigexSession.launch_link && (
+                        <a
+                          href={sigexSession.launch_link}
+                          className="mt-2 inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-[#0F52BA] text-white text-sm font-medium rounded-xl hover:bg-[#0D47A1] transition-colors md:hidden"
+                        >
+                          Открыть в eGov Mobile
+                        </a>
+                      )}
                     </div>
                   )}
 

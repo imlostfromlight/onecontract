@@ -50,7 +50,12 @@ def create_signing_session(title: str, file_b64: str = None, file_mime: str = '@
 
     cache.set(f'sigex_{qr_id}', {'sign_url': sign_url, 'expire_at': expire_at}, timeout=_CACHE_TTL)
 
-    return {'id': qr_id, 'qr_image': qr_code, 'expire_at': expire_at}
+    return {
+        'id': qr_id,
+        'qr_image': qr_code,
+        'expire_at': expire_at,
+        'launch_link': data.get('eGovMobileLaunchLink', ''),
+    }
 
 
 def get_session_status(session_id: str) -> dict:

@@ -142,6 +142,7 @@ class TemplateViewSet(viewsets.ModelViewSet):
                         user=request.user, template=template, title=title,
                         client_fields=client_fields, manager_fields=fields,
                         client_phone=request.data.get('client_phone', ''),
+                        signing_methods=template.signing_methods or [],
                     )
                     with open(dest_path, 'rb') as f:
                         document.file.save(src_name, File(f), save=False)
