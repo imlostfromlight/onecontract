@@ -309,15 +309,21 @@ export function PublicDocumentSign() {
 
               {/* Preview */}
               <div className="border border-[#D6E6F3] rounded-xl overflow-hidden">
-                <button type="button" onClick={() => setPreviewOpen(v => !v)}
-                  className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-[#0D1B2A] hover:bg-[#F5F8FF] transition-colors">
-                  <span>Посмотреть договор</span>
-                  {previewOpen ? <ChevronUp className="w-4 h-4 text-[#6B7E92]" /> : <ChevronDown className="w-4 h-4 text-[#6B7E92]" />}
-                </button>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-[#D6E6F3]">
+                  <button type="button" onClick={() => setPreviewOpen(v => !v)}
+                    className="flex items-center gap-2 text-sm font-medium text-[#0D1B2A] hover:text-[#0F52BA] transition-colors">
+                    <span>Посмотреть договор</span>
+                    {previewOpen ? <ChevronUp className="w-4 h-4 text-[#6B7E92]" /> : <ChevronDown className="w-4 h-4 text-[#6B7E92]" />}
+                  </button>
+                  <a href={previewUrl} target="_blank" rel="noreferrer"
+                    className="text-xs text-[#0F52BA] hover:underline flex items-center gap-1">
+                    <Download className="w-3 h-3" /> Открыть полностью
+                  </a>
+                </div>
                 {previewOpen && (
-                  <div className="border-t border-[#D6E6F3]">
+                  <div>
                     {isPdf ? (
-                      <iframe src={previewUrl} className="w-full" style={{ height: '500px' }} title="Предпросмотр" />
+                      <iframe src={previewUrl} className="w-full" style={{ height: '80vh' }} title="Предпросмотр" />
                     ) : isDocx ? (
                       <DocxPreview url={fileUrl} />
                     ) : (
