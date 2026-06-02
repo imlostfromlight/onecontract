@@ -55,9 +55,11 @@ export function PublicDocumentSign() {
 
   useEffect(() => { if (uuid) fetchDocument(); }, [uuid]);
 
-  const normalizedFields = (document?.client_fields ?? []).map(f =>
-    typeof f === 'string' ? { name: f, type: 'text' } : f
-  );
+  const normalizedFields = [...new Map(
+    (document?.client_fields ?? [])
+      .map(f => typeof f === 'string' ? { name: f, type: 'text' } : f)
+      .map(f => [f.name, f])
+  ).values()];
 
   useEffect(() => {
     if (document) {
@@ -213,7 +215,7 @@ export function PublicDocumentSign() {
           setSigexStatus(data.status);
         }
       } catch { /* ignore poll errors */ }
-    }, 2000);
+    }, 6000);
   };
 
   const recordEgovSign = async (iin: string) => {

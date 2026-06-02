@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/ui/button';
 import NCALayerService from '../lib/ncalayer';
@@ -7,7 +6,7 @@ import { Header } from '../components/Header';
 import { Footer } from '../components/Footer';
 import { Whatsapp } from '../components/Whatsapp';
 import { AIChatWidget } from '../components/AIChatWidget';
-import { Users, CheckCircle, Clock, Copy, Lock, Download, Share2 } from 'lucide-react';
+import { Users, CheckCircle, Clock, Copy, Lock, Download, Share2, X, Fingerprint, MousePointer } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_BASE || 'https://onecontract.onrender.com';
 
@@ -49,7 +48,19 @@ export function DocumentSign() {
     // Signers panel
     const [expandedDocId, setExpandedDocId] = useState<number | null>(null);
 
-    useEffect(() => { fetchDocuments(); }, [token]);
+    // Org sign modal
+    const [orgSignDoc, setOrgSignDoc] = useState<Document | null>(null);
+    const [orgSignStep, setOrgSignStep] = useState<'method' | 'ecp'>('method');
+    const [orgSignLoading, setOrgSignLoading] = useState(false);
+
+    const refreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    useEffect(() => {
+        fetchDocuments();
+        // Auto-refresh every 30s to pick up client signatures
+        refreshRef.current = setInterval(fetchDocuments, 30000);
+        return () => { if (refreshRef.current) clearInterval(refreshRef.current); };
+    }, [token]);
 
     // eGov polling
     useEffect(() => {
@@ -121,24 +132,40 @@ export function DocumentSign() {
         } catch (e) { alert('Ошибка при скачивании'); }
     };
 
-    const handleOrgSign = async (doc: Document) => {
+    const submitOrgSign = async (doc: Document, signature: string) => {
         if (!token) return;
-        setLoading(true); setError(null);
+        setOrgSignLoading(true);
         try {
             const res = await fetch(`${API_BASE}/api/documents/${doc.id}/org_sign/`, {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
+                body: JSON.stringify({ signature }),
             });
             if (res.ok) {
                 const updated = await res.json();
                 setDocuments(docs => docs.map(d => d.id === updated.id ? updated : d));
+                setOrgSignDoc(null);
             } else {
                 const err = await res.json();
                 setError(err.detail);
             }
         } catch (e: any) { setError(e.message); }
-        finally { setLoading(false); }
+        finally { setOrgSignLoading(false); }
+    };
+
+    const handleOrgSignSimple = async () => {
+        if (!orgSignDoc) return;
+        await submitOrgSign(orgSignDoc, `ORG_APPROVED`);
+    };
+
+    const handleOrgSignECP = async () => {
+        if (!orgSignDoc) return;
+        setOrgSignLoading(true);
+        try {
+            const dataToSign = btoa(orgSignDoc.uuid || String(orgSignDoc.id));
+            const signature = await NCALayerService.signFile(dataToSign);
+            await submitOrgSign(orgSignDoc, signature);
+        } catch (e: any) { setError(e.message); setOrgSignLoading(false); }
     };
 
     const handleClose = async (doc: Document) => {
@@ -314,11 +341,13 @@ export function DocumentSign() {
 
                                             {/* Status */}
                                             <td className="px-6 py-4">
-                                                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${doc.status === 'CLOSED'
-                                                    ? 'bg-gray-100 text-gray-600 border border-gray-200'
-                                                    : 'bg-green-100 text-green-700 border border-green-200'}`}>
-                                                    {doc.status === 'CLOSED' ? 'Закрыт' : 'Активен'}
-                                                </span>
+                                                {(() => {
+                                                    if (doc.status === 'CLOSED') return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-600 border border-gray-200">Закрыт</span>;
+                                                    if (doc.org_signed_at && doc.signature_count > 0) return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">Подписан</span>;
+                                                    if (doc.signature_count > 0 && !doc.org_signed_at) return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-700 border border-yellow-200">Ждёт подписи орг.</span>;
+                                                    if (doc.org_signed_at && doc.signature_count === 0) return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-700 border border-blue-200">Ждёт клиента</span>;
+                                                    return <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-700 border border-green-200">Активен</span>;
+                                                })()}
                                             </td>
 
                                             {/* Actions */}
@@ -340,7 +369,7 @@ export function DocumentSign() {
                                                     {isOrg && (
                                                         <>
                                                             {!doc.org_signed_at && (
-                                                                <Button size="sm" variant="outline" onClick={() => handleOrgSign(doc)} disabled={loading} className="border-blue-500 text-blue-600 hover:bg-blue-50">
+                                                                <Button size="sm" variant="outline" onClick={() => { setOrgSignDoc(doc); setOrgSignStep('method'); setError(null); }} className="border-blue-500 text-blue-600 hover:bg-blue-50">
                                                                     Подписать
                                                                 </Button>
                                                             )}
@@ -418,6 +447,53 @@ export function DocumentSign() {
             <Whatsapp />
 
             <AIChatWidget />
+
+            {/* Org Sign Modal */}
+            {orgSignDoc && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 relative">
+                        <button onClick={() => setOrgSignDoc(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+                        <h3 className="text-lg font-bold text-gray-900 mb-1">Подписать договор</h3>
+                        <p className="text-sm text-gray-500 mb-5">{orgSignDoc.title}</p>
+                        {error && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded-xl text-sm mb-4">{error}</div>}
+                        {orgSignStep === 'method' && (
+                            <div className="space-y-3">
+                                <button onClick={() => setOrgSignStep('ecp')}
+                                    className="w-full flex items-center gap-4 px-5 py-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-colors text-left">
+                                    <Fingerprint className="w-6 h-6 text-blue-600 shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-900">ЭЦП (NCALayer)</p>
+                                        <p className="text-xs text-gray-500">Подпишите с помощью ЭЦП через NCALayer</p>
+                                    </div>
+                                </button>
+                                <button onClick={handleOrgSignSimple} disabled={orgSignLoading}
+                                    className="w-full flex items-center gap-4 px-5 py-4 border-2 border-gray-200 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-colors text-left disabled:opacity-50">
+                                    <MousePointer className="w-6 h-6 text-blue-600 shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-semibold text-gray-900">{orgSignLoading ? 'Сохранение...' : 'Подтвердить подпись'}</p>
+                                        <p className="text-xs text-gray-500">Простое подтверждение без ЭЦП</p>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                        {orgSignStep === 'ecp' && (
+                            <div className="space-y-4">
+                                <div className="flex items-center gap-3 bg-blue-50 rounded-xl px-4 py-3">
+                                    <Fingerprint className="w-5 h-5 text-blue-600 shrink-0" />
+                                    <p className="text-sm text-blue-800">Убедитесь что NCALayer запущен на вашем компьютере</p>
+                                </div>
+                                <button onClick={handleOrgSignECP} disabled={orgSignLoading}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-colors text-sm flex items-center justify-center gap-2">
+                                    {orgSignLoading
+                                        ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Ожидание NCALayer...</>
+                                        : <><Fingerprint className="w-4 h-4" /> Подписать через NCALayer</>}
+                                </button>
+                                <button onClick={() => setOrgSignStep('method')} className="w-full text-xs text-gray-500 hover:text-blue-600 py-1">← Назад</button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* eGov QR Modal */}
             {egovModalOpen && (
